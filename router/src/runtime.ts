@@ -17,13 +17,15 @@ export function createRouterRuntime(
 ): RouterRuntime {
   const linkServer = new LinkServer(config, coordinator);
   const server = createServer(
-    createHttpHandler(config, coordinator, linkServer.ready),
+    createHttpHandler(config, coordinator, () => linkServer.ready),
   );
   linkServer.attach(server);
 
   return {
     server,
-    ready: linkServer.ready,
+    get ready(): Promise<void> {
+      return linkServer.ready;
+    },
     async close(): Promise<void> {
       await linkServer.close();
       if (server.listening) {

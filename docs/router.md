@@ -79,6 +79,11 @@ LATCH_CONTROL_TOKEN=<different-secret>
 LATCH_REDIS_URL=<TLS Redis connection string>
 ```
 
+`LATCH_REDIS_URL` must be a native Redis protocol URL (such as the Upstash Redis
+TLS endpoint), not an HTTP/REST endpoint. Startup failures return structured
+`router_unavailable` responses and are retried by a later request without a
+background reconnect loop.
+
 Optional:
 
 ```text
@@ -162,6 +167,16 @@ cargo run -p latch-link
 
 The connection is outbound TLS only.
 
+Development secrets may be kept outside the repository in
+`%LOCALAPPDATA%\Latch\secrets.ps1` and loaded into the current PowerShell process:
+
+```powershell
+. "$env:LOCALAPPDATA\Latch\secrets.ps1"
+```
+
+The file should be readable only by the current Windows user, administrators,
+and `SYSTEM`. Never commit or print its contents.
+
 ## Manual acceptance test
 
 With `latch-link` running, use the Router control token from a trusted terminal.
@@ -205,6 +220,18 @@ Invoke-RestMethod -Method Post -Headers $headers -ContentType "application/json"
 ```
 
 Acceptance requires an `ok` Latch response with exit code `0` and the actual Node version from that Windows machine. Do not treat a mocked/local CI echo as the deployed-machine acceptance.
+
+The same production proof and the V0.1 filesystem/process smoke suite are
+repeatable from the repository root after loading the local secrets:
+
+```powershell
+. "$env:LOCALAPPDATA\Latch\secrets.ps1"
+.\scripts\accept-v02.ps1 -FullSmoke
+```
+
+On Windows, the engine retains the opened workspace handle until `latch-link`
+exits. The script deletes all test files immediately; if the now-empty temporary
+directory remains locked, stop `latch-link` before removing it.
 
 ## Security boundaries
 

@@ -32,7 +32,7 @@ export class LinkServer {
   readonly #wss = new WebSocketServer({ noServer: true });
   readonly #sessions = new Map<string, DeviceSession>();
   readonly #pending = new Map<string, PendingDeviceRequest>();
-  readonly #ready: Promise<void>;
+  #readyPromise: Promise<void> | null = null;
   #unsubscribeDispatch: (() => Promise<void>) | null = null;
 
   constructor(
@@ -41,11 +41,16 @@ export class LinkServer {
     private readonly instanceId: string = randomUUID(),
   ) {
     this.#wss.on('connection', (ws) => this.#accept(ws));
-    this.#ready = this.#start();
   }
 
   get ready(): Promise<void> {
-    return this.#ready;
+    const attempt = (this.#readyPromise ??= this.#start());
+    void attempt.catch(() => {
+      if (this.#readyPromise === attempt) {
+        this.#readyPromise = null;
+      }
+    });
+    return attempt;
   }
 
   attach(server: HttpServer): void {
@@ -114,7 +119,7 @@ export class LinkServer {
     isBinary: boolean,
   ): Promise<void> {
     try {
-      await this.#ready;
+      await this.ready;
       if (isBinary) {
         sendError(ws, 'invalid_message', 'expected a JSON authentication message');
         ws.close(1008, 'invalid authentication');

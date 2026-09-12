@@ -12,7 +12,7 @@ const MAX_REQUEST_BODY_BYTES = 256 * 1024;
 export function createHttpHandler(
   config: RouterConfig,
   coordinator: RelayCoordinator,
-  ready: Promise<void>,
+  ready: () => Promise<void>,
 ): (request: IncomingMessage, response: ServerResponse) => void {
   return (request, response) => {
     void handle(request, response, config, coordinator, ready).catch((error: unknown) => {
@@ -34,12 +34,12 @@ async function handle(
   response: ServerResponse,
   config: RouterConfig,
   coordinator: RelayCoordinator,
-  ready: Promise<void>,
+  ready: () => Promise<void>,
 ): Promise<void> {
   const path = routePath(request);
 
   if (request.method === 'GET' && path === '/api/health') {
-    await ready;
+    await ready();
     sendJson(response, 200, {
       status: 'ok',
       transport: 'websocket+redis',
@@ -55,7 +55,7 @@ async function handle(
     return;
   }
 
-  await ready;
+  await ready();
 
   if (request.method === 'GET' && path === '/api/devices') {
     const devices = (await coordinator.listDevices()).map<PublicDevice>((device) => ({

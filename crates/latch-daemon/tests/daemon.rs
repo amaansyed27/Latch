@@ -292,7 +292,7 @@ fn daemon_shutdown_terminates_managed_processes() {
     ));
 
     assert!(daemon.shutdown().success());
-    thread::sleep(Duration::from_millis(1_000));
+    thread::sleep(Duration::from_secs(1));
 
     assert!(
         !marker.exists(),

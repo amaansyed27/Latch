@@ -7,7 +7,7 @@ import type {
   RelayCompletion,
 } from './types.js';
 
-type RedisClient = ReturnType<typeof createClient>;
+type RedisClient = ReturnType<typeof createRedisClient>;
 
 interface PendingResponse {
   resolve: (completion: RelayCompletion) => void;
@@ -17,21 +17,42 @@ interface PendingResponse {
 const PREFIX = 'latch:v02:';
 
 export class RedisCoordinator implements RelayCoordinator {
-  readonly #command: RedisClient;
-  readonly #dispatchSubscriber: RedisClient;
-  readonly #responseSubscriber: RedisClient;
+  #command: RedisClient;
+  #dispatchSubscriber: RedisClient;
+  #responseSubscriber: RedisClient;
   readonly #pending = new Map<string, PendingResponse>();
   #startPromise: Promise<void> | null = null;
 
-  constructor(redisUrl: string) {
-    this.#command = createClient({ url: redisUrl });
-    this.#dispatchSubscriber = this.#command.duplicate();
-    this.#responseSubscriber = this.#command.duplicate();
+  constructor(private readonly redisUrl: string) {
+    [this.#command, this.#dispatchSubscriber, this.#responseSubscriber] =
+      this.#createClients();
+  }
+
+  #createClients(): [RedisClient, RedisClient, RedisClient] {
+    const command = createRedisClient(this.redisUrl);
+    command.on('error', logRedisError);
+    const dispatchSubscriber = command.duplicate();
+    const responseSubscriber = command.duplicate();
+    dispatchSubscriber.on('error', logRedisError);
+    responseSubscriber.on('error', logRedisError);
+    return [command, dispatchSubscriber, responseSubscriber];
   }
 
   async start(): Promise<void> {
-    this.#startPromise ??= this.#start();
-    await this.#startPromise;
+    const attempt = (this.#startPromise ??= this.#start());
+    try {
+      await attempt;
+    } catch (error) {
+      if (this.#startPromise === attempt) {
+        destroyClient(this.#responseSubscriber);
+        destroyClient(this.#dispatchSubscriber);
+        destroyClient(this.#command);
+        [this.#command, this.#dispatchSubscriber, this.#responseSubscriber] =
+          this.#createClients();
+        this.#startPromise = null;
+      }
+      throw error;
+    }
   }
 
   async stop(): Promise<void> {
@@ -216,10 +237,27 @@ export class RedisCoordinator implements RelayCoordinator {
   }
 }
 
+function createRedisClient(redisUrl: string) {
+  return createClient({
+    url: redisUrl,
+    socket: { reconnectStrategy: false },
+  });
+}
+
 async function closeClient(client: RedisClient): Promise<void> {
   if (client.isOpen) {
-    await client.quit();
+    await client.close();
   }
+}
+
+function destroyClient(client: RedisClient): void {
+  if (client.isOpen) {
+    client.destroy();
+  }
+}
+
+function logRedisError(error: Error): void {
+  console.warn('redis client error', { error_name: error.name });
 }
 
 function deviceKey(deviceId: string): string {

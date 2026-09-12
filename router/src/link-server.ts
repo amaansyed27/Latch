@@ -294,7 +294,6 @@ export class LinkServer {
       console.warn('device request write failed', {
         device_id: message.device_id,
         error_name: error instanceof Error ? error.name : 'unknown',
-        error_message: error instanceof Error ? error.message : 'unknown',
       });
       await this.coordinator.respond(message.request_id, {
         kind: 'error',
@@ -374,7 +373,7 @@ function sendError(ws: WebSocket, code: string, message: string): void {
 function sendAsync(ws: WebSocket, message: RouterMessage): Promise<void> {
   return new Promise((resolve, reject) => {
     ws.send(JSON.stringify(message), (error) => {
-      if (error === undefined) {
+      if (error === undefined || error === null) {
         resolve();
       } else {
         reject(error);

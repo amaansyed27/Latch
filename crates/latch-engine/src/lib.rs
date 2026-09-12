@@ -319,7 +319,7 @@ mod tests {
             ResponseOutcome::Error { error } => {
                 assert_eq!(error.code, ErrorCode::UnsupportedVersion);
             }
-            outcome => panic!("unexpected response: {outcome:?}"),
+            outcome @ ResponseOutcome::Ok { .. } => panic!("unexpected response: {outcome:?}"),
         }
     }
 }

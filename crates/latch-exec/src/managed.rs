@@ -38,10 +38,8 @@ impl ProcessManager {
 
         let stdout_buffer = Arc::new(Mutex::new(OutputBuffer::default()));
         let stderr_buffer = Arc::new(Mutex::new(OutputBuffer::default()));
-        let stdout_reader =
-            spawn_reader("stdout", spawned.stdout, Arc::clone(&stdout_buffer));
-        let stderr_reader =
-            spawn_reader("stderr", spawned.stderr, Arc::clone(&stderr_buffer));
+        let stdout_reader = spawn_reader("stdout", spawned.stdout, Arc::clone(&stdout_buffer));
+        let stderr_reader = spawn_reader("stderr", spawned.stderr, Arc::clone(&stderr_buffer));
 
         let process_id = ProcessId::new();
         let os_pid = child.id();
@@ -178,10 +176,8 @@ impl ManagedProcess {
         let was_running = self.finished.is_none();
 
         if was_running {
-            let status = terminate_group(
-                &mut self.child,
-                &format!("managed process {process_id}"),
-            )?;
+            let status =
+                terminate_group(&mut self.child, &format!("managed process {process_id}"))?;
             self.finished = Some(FinishedProcess {
                 status,
                 elapsed: self.started.elapsed(),

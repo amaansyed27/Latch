@@ -136,8 +136,7 @@ fn blocking_run_bounds_and_drains_both_output_streams() {
         max_stderr_bytes: 1024,
     };
 
-    let result =
-        run_blocking_with_options(&workspace, &large_output_command(), &options).unwrap();
+    let result = run_blocking_with_options(&workspace, &large_output_command(), &options).unwrap();
 
     assert_eq!(result.exit_code, Some(0));
     assert_eq!(result.stdout.len(), 1024);

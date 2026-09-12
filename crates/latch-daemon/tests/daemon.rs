@@ -199,20 +199,12 @@ fn daemon_exercises_v01_protocol_across_process_boundary() {
         other => panic!("unexpected exec.run response: {other:?}"),
     }
 
-    let process_id = match success(daemon.request(
-        "5",
-        "exec.start",
-        start_request(workspace_id),
-    )) {
+    let process_id = match success(daemon.request("5", "exec.start", start_request(workspace_id))) {
         ResponsePayload::ProcessStarted(response) => response.process_id,
         other => panic!("unexpected exec.start response: {other:?}"),
     };
 
-    match success(daemon.request(
-        "6",
-        "exec.status",
-        json!({"process_id": process_id}),
-    )) {
+    match success(daemon.request("6", "exec.status", json!({"process_id": process_id}))) {
         ResponsePayload::ProcessStatus(response) => {
             assert!(matches!(response.state, ProcessStateResponse::Running));
         }
@@ -238,11 +230,7 @@ fn daemon_exercises_v01_protocol_across_process_boundary() {
     }
     assert!(saw_ready, "managed output never became observable");
 
-    match success(daemon.request(
-        "7",
-        "exec.kill",
-        json!({"process_id": process_id}),
-    )) {
+    match success(daemon.request("7", "exec.kill", json!({"process_id": process_id}))) {
         ResponsePayload::ProcessStatus(response) => {
             assert!(matches!(
                 response.state,
@@ -298,11 +286,7 @@ fn daemon_shutdown_terminates_managed_processes() {
     };
 
     assert!(matches!(
-        success(daemon.request(
-            "2",
-            "exec.start",
-            delayed_marker_request(workspace_id),
-        )),
+        success(daemon.request("2", "exec.start", delayed_marker_request(workspace_id),)),
         ResponsePayload::ProcessStarted(_)
     ));
 

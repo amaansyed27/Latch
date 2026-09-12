@@ -52,13 +52,12 @@ pub(crate) fn terminate_group(
 ) -> Result<ExitStatus, ExecError> {
     if let Err(source) = child.kill() {
         if source.kind() == std::io::ErrorKind::InvalidInput {
-            let status =
-                child
-                    .try_wait()
-                    .map_err(|query_source| ExecError::ProcessFailed {
-                        message: format!("could not query {description} after termination race"),
-                        source: query_source,
-                    })?;
+            let status = child
+                .try_wait()
+                .map_err(|query_source| ExecError::ProcessFailed {
+                    message: format!("could not query {description} after termination race"),
+                    source: query_source,
+                })?;
             if let Some(status) = status {
                 return Ok(status);
             }

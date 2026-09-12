@@ -86,9 +86,11 @@ fn read_identity(path: &Path) -> Result<DeviceId, LinkError> {
         source,
     })?;
     let stored: StoredIdentity =
-        serde_json::from_reader(BufReader::new(file)).map_err(|source| LinkError::InvalidIdentity {
-            path: path.to_path_buf(),
-            source,
+        serde_json::from_reader(BufReader::new(file)).map_err(|source| {
+            LinkError::InvalidIdentity {
+                path: path.to_path_buf(),
+                source,
+            }
         })?;
     if stored.version != IDENTITY_VERSION {
         return Err(LinkError::UnsupportedIdentityVersion {

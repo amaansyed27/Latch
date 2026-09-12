@@ -148,9 +148,6 @@ mod tests {
             None,
         )
         .unwrap();
-        assert_eq!(
-            config.router_url().as_str(),
-            "ws://127.0.0.1:3000/api/link"
-        );
+        assert_eq!(config.router_url().as_str(), "ws://127.0.0.1:3000/api/link");
     }
 }

@@ -62,7 +62,10 @@ impl LinkClient {
             }
 
             let delay = self.backoff.next_delay();
-            info!(delay_ms = delay.as_millis(), "waiting before router reconnect");
+            info!(
+                delay_ms = delay.as_millis(),
+                "waiting before router reconnect"
+            );
             sleep(delay).await;
         }
     }
@@ -125,7 +128,8 @@ impl LinkClient {
 
             match message {
                 Message::Text(text) => {
-                    let server_message = match serde_json::from_str::<ServerMessage>(text.as_ref()) {
+                    let server_message = match serde_json::from_str::<ServerMessage>(text.as_ref())
+                    {
                         Ok(message) => message,
                         Err(_) => break Err(LinkError::InvalidLinkMessage),
                     };
@@ -198,8 +202,9 @@ pub fn execute_remote(
 
 fn parse_server_message(message: Message) -> Result<ServerMessage, LinkError> {
     match message {
-        Message::Text(text) => serde_json::from_str(text.as_ref())
-            .map_err(|_| LinkError::InvalidLinkMessage),
+        Message::Text(text) => {
+            serde_json::from_str(text.as_ref()).map_err(|_| LinkError::InvalidLinkMessage)
+        }
         Message::Close(_) => Err(LinkError::HandshakeClosed),
         _ => Err(LinkError::InvalidLinkMessage),
     }

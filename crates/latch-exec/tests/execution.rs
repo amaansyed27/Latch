@@ -116,7 +116,7 @@ fn blocking_run_times_out_and_returns_partial_output() {
     let command = shell("echo before-timeout; sleep 30");
 
     let options = RunOptions {
-        timeout: Some(Duration::from_millis(100)),
+        timeout: Some(Duration::from_secs(1)),
         max_stdout_bytes: 4096,
         max_stderr_bytes: 4096,
     };

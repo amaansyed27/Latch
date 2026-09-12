@@ -128,8 +128,7 @@ impl LinkClient {
 
             match message {
                 Message::Text(text) => {
-                    let Ok(server_message) =
-                        serde_json::from_str::<ServerMessage>(text.as_ref())
+                    let Ok(server_message) = serde_json::from_str::<ServerMessage>(text.as_ref())
                     else {
                         break Err(LinkError::InvalidLinkMessage);
                     };

@@ -7,13 +7,13 @@ use tracing_subscriber::EnvFilter;
 
 use crate::engine::Engine;
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     init_logging()?;
     transport::run(&mut Engine::new())?;
     Ok(())
 }
 
-fn init_logging() -> Result<(), Box<dyn Error>> {
+fn init_logging() -> Result<(), Box<dyn Error + Send + Sync>> {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     tracing_subscriber::fmt()
         .json()

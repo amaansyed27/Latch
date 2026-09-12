@@ -154,6 +154,9 @@ pub struct ExecResponse {
     pub stdout: String,
     pub stderr: String,
     pub duration_ms: u64,
+    pub timed_out: bool,
+    pub stdout_truncated: bool,
+    pub stderr_truncated: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -211,6 +214,8 @@ pub enum ErrorCode {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
     #[test]
@@ -222,5 +227,46 @@ mod tests {
 
         assert_eq!(request.version, PROTOCOL_VERSION);
         assert!(matches!(request.request, Request::FsRead(_)));
+    }
+
+    #[test]
+    fn exec_response_round_trips_with_execution_state() {
+        let response = ResponseEnvelope::success(
+            "run-1".to_owned(),
+            ResponsePayload::Exec(ExecResponse {
+                exit_code: None,
+                stdout: "partial".to_owned(),
+                stderr: "warning".to_owned(),
+                duration_ms: 250,
+                timed_out: true,
+                stdout_truncated: false,
+                stderr_truncated: true,
+            }),
+        );
+
+        let value = serde_json::to_value(&response).unwrap();
+        assert_eq!(
+            value,
+            json!({
+                "id": "run-1",
+                "version": 1,
+                "status": "ok",
+                "result": {
+                    "type": "exec",
+                    "data": {
+                        "exit_code": null,
+                        "stdout": "partial",
+                        "stderr": "warning",
+                        "duration_ms": 250,
+                        "timed_out": true,
+                        "stdout_truncated": false,
+                        "stderr_truncated": true
+                    }
+                }
+            })
+        );
+
+        let decoded: ResponseEnvelope = serde_json::from_value(value).unwrap();
+        assert_eq!(decoded, response);
     }
 }

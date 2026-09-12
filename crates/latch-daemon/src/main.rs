@@ -9,7 +9,12 @@ use crate::engine::Engine;
 
 fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     init_logging()?;
-    transport::run(&mut Engine::new())?;
+
+    let mut engine = Engine::new();
+    let transport_result = transport::run(&mut engine);
+    engine.shutdown();
+    transport_result?;
+
     Ok(())
 }
 

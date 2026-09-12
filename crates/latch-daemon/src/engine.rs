@@ -42,6 +42,10 @@ impl Engine {
         }
     }
 
+    pub fn shutdown(&self) {
+        self.processes.shutdown_all();
+    }
+
     fn open_workspace(&mut self, path: String) -> Result<ResponsePayload, ProtocolError> {
         let workspace = Workspace::open(path).map_err(|error| map_workspace_error(&error))?;
         self.register_workspace(workspace)
@@ -115,6 +119,9 @@ impl Engine {
             stdout: result.stdout,
             stderr: result.stderr,
             duration_ms: duration_ms(result.duration),
+            timed_out: result.timed_out,
+            stdout_truncated: result.stdout_truncated,
+            stderr_truncated: result.stderr_truncated,
         }))
     }
 

@@ -1,25 +1,29 @@
 use std::{
     collections::HashMap,
     io::Read,
-    process::{ChildStderr, ChildStdout, Command, ExitStatus, Stdio},
+    process::ExitStatus,
     sync::{Arc, Mutex, MutexGuard},
-    thread,
+    thread::{self, JoinHandle},
     time::Instant,
 };
 
-use command_group::{CommandGroup, GroupChild};
+use command_group::GroupChild;
 use latch_core::{ProcessId, Workspace};
 use tracing::{info, instrument, warn};
 
 use crate::{
+    process::{spawn_grouped, terminate_group},
     CommandSpec, ExecError, ManagedOutput, ManagedStreamOutput, ProcessState, ProcessStatus,
+    ShutdownReport,
 };
 
 const MAX_STREAM_BYTES: usize = 1024 * 1024;
 
+type ProcessHandle = Arc<Mutex<ManagedProcess>>;
+
 #[derive(Debug, Default)]
 pub struct ProcessManager {
-    processes: Mutex<HashMap<ProcessId, ManagedProcess>>,
+    processes: Mutex<HashMap<ProcessId, ProcessHandle>>,
 }
 
 impl ProcessManager {
@@ -29,39 +33,15 @@ impl ProcessManager {
 
     #[instrument(skip(self, workspace, spec), fields(workspace_id = %workspace.id(), program = %spec.program))]
     pub fn start(&self, workspace: &Workspace, spec: &CommandSpec) -> Result<ProcessId, ExecError> {
-        let mut command = Command::new(&spec.program);
-        command
-            .args(&spec.args)
-            .current_dir(workspace.root())
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-
-        let mut child = command
-            .group_spawn()
-            .map_err(|source| ExecError::spawn(&spec.program, source))?;
-
-        let stdout = child
-            .inner()
-            .stdout
-            .take()
-            .ok_or_else(|| ExecError::ProcessFailed {
-                message: "stdout pipe was not available".to_owned(),
-                source: std::io::Error::other("stdout pipe missing after spawn"),
-            })?;
-        let stderr = child
-            .inner()
-            .stderr
-            .take()
-            .ok_or_else(|| ExecError::ProcessFailed {
-                message: "stderr pipe was not available".to_owned(),
-                source: std::io::Error::other("stderr pipe missing after spawn"),
-            })?;
+        let spawned = spawn_grouped(workspace, spec)?;
+        let child = spawned.child;
 
         let stdout_buffer = Arc::new(Mutex::new(OutputBuffer::default()));
         let stderr_buffer = Arc::new(Mutex::new(OutputBuffer::default()));
-        spawn_reader("stdout", stdout, Arc::clone(&stdout_buffer));
-        spawn_reader("stderr", stderr, Arc::clone(&stderr_buffer));
+        let stdout_reader =
+            spawn_reader("stdout", spawned.stdout, Arc::clone(&stdout_buffer));
+        let stderr_reader =
+            spawn_reader("stderr", spawned.stderr, Arc::clone(&stderr_buffer));
 
         let process_id = ProcessId::new();
         let os_pid = child.id();
@@ -71,27 +51,25 @@ impl ProcessManager {
             finished: None,
             stdout: stdout_buffer,
             stderr: stderr_buffer,
+            stdout_reader: Some(stdout_reader),
+            stderr_reader: Some(stderr_reader),
         };
 
-        lock(&self.processes).insert(process_id, process);
+        lock(&self.processes).insert(process_id, Arc::new(Mutex::new(process)));
         info!(%process_id, os_pid, "managed process started");
         Ok(process_id)
     }
 
     pub fn status(&self, process_id: ProcessId) -> Result<ProcessStatus, ExecError> {
-        let mut processes = lock(&self.processes);
-        let process = processes
-            .get_mut(&process_id)
-            .ok_or(ExecError::ProcessNotFound { process_id })?;
+        let handle = self.process(process_id)?;
+        let mut process = lock(&handle);
         process.refresh(process_id)?;
         Ok(process.status())
     }
 
     pub fn output(&self, process_id: ProcessId) -> Result<ManagedOutput, ExecError> {
-        let processes = lock(&self.processes);
-        let process = processes
-            .get(&process_id)
-            .ok_or(ExecError::ProcessNotFound { process_id })?;
+        let handle = self.process(process_id)?;
+        let process = lock(&handle);
         let stdout = lock(&process.stdout).snapshot();
         let stderr = lock(&process.stderr).snapshot();
 
@@ -100,35 +78,64 @@ impl ProcessManager {
 
     #[instrument(skip(self), fields(%process_id))]
     pub fn kill(&self, process_id: ProcessId) -> Result<ProcessStatus, ExecError> {
-        let mut processes = lock(&self.processes);
-        let process = processes
-            .get_mut(&process_id)
-            .ok_or(ExecError::ProcessNotFound { process_id })?;
-
-        process.refresh(process_id)?;
-        if process.finished.is_none() {
-            process
-                .child
-                .kill()
-                .map_err(|source| ExecError::ProcessFailed {
-                    message: format!("could not terminate process {process_id}"),
-                    source,
-                })?;
-            let status = process
-                .child
-                .wait()
-                .map_err(|source| ExecError::ProcessFailed {
-                    message: format!("could not wait for process {process_id} after termination"),
-                    source,
-                })?;
-            process.finished = Some(FinishedProcess {
-                status,
-                elapsed: process.started.elapsed(),
-            });
+        let handle = self.process(process_id)?;
+        let mut process = lock(&handle);
+        let terminated = process.terminate(process_id)?;
+        if terminated {
             info!("managed process terminated");
         }
-
         Ok(process.status())
+    }
+
+    pub fn shutdown_all(&self) -> ShutdownReport {
+        let handles = {
+            let processes = lock(&self.processes);
+            processes
+                .iter()
+                .map(|(process_id, process)| (*process_id, Arc::clone(process)))
+                .collect::<Vec<_>>()
+        };
+
+        let mut report = ShutdownReport {
+            examined: handles.len(),
+            ..ShutdownReport::default()
+        };
+
+        for (process_id, handle) in handles {
+            let result = lock(&handle).terminate(process_id);
+            match result {
+                Ok(true) => report.terminated += 1,
+                Ok(false) => {}
+                Err(error) => {
+                    report.failures += 1;
+                    warn!(%process_id, error = %error, "managed process shutdown failed");
+                }
+            }
+        }
+
+        if report.terminated > 0 || report.failures > 0 {
+            info!(
+                examined = report.examined,
+                terminated = report.terminated,
+                failures = report.failures,
+                "managed process shutdown complete"
+            );
+        }
+
+        report
+    }
+
+    fn process(&self, process_id: ProcessId) -> Result<ProcessHandle, ExecError> {
+        lock(&self.processes)
+            .get(&process_id)
+            .cloned()
+            .ok_or(ExecError::ProcessNotFound { process_id })
+    }
+}
+
+impl Drop for ProcessManager {
+    fn drop(&mut self) {
+        self.shutdown_all();
     }
 }
 
@@ -139,6 +146,8 @@ struct ManagedProcess {
     finished: Option<FinishedProcess>,
     stdout: Arc<Mutex<OutputBuffer>>,
     stderr: Arc<Mutex<OutputBuffer>>,
+    stdout_reader: Option<JoinHandle<()>>,
+    stderr_reader: Option<JoinHandle<()>>,
 }
 
 impl ManagedProcess {
@@ -161,6 +170,34 @@ impl ManagedProcess {
                 elapsed: self.started.elapsed(),
             });
         }
+        Ok(())
+    }
+
+    fn terminate(&mut self, process_id: ProcessId) -> Result<bool, ExecError> {
+        self.refresh(process_id)?;
+        let was_running = self.finished.is_none();
+
+        if was_running {
+            let status = terminate_group(
+                &mut self.child,
+                &format!("managed process {process_id}"),
+            )?;
+            self.finished = Some(FinishedProcess {
+                status,
+                elapsed: self.started.elapsed(),
+            });
+        }
+
+        self.join_readers(process_id)?;
+        Ok(was_running)
+    }
+
+    fn join_readers(&mut self, process_id: ProcessId) -> Result<(), ExecError> {
+        let stdout_result = join_reader(process_id, "stdout", self.stdout_reader.take());
+        let stderr_result = join_reader(process_id, "stderr", self.stderr_reader.take());
+
+        stdout_result?;
+        stderr_result?;
         Ok(())
     }
 
@@ -221,16 +258,12 @@ impl OutputBuffer {
     }
 }
 
-trait ManagedStream: Read + Send + 'static {}
-impl ManagedStream for ChildStdout {}
-impl ManagedStream for ChildStderr {}
-
 fn spawn_reader(
     stream_name: &'static str,
-    stream: impl ManagedStream,
+    stream: impl Read + Send + 'static,
     buffer: Arc<Mutex<OutputBuffer>>,
-) {
-    thread::spawn(move || read_stream(stream_name, stream, &buffer));
+) -> JoinHandle<()> {
+    thread::spawn(move || read_stream(stream_name, stream, &buffer))
 }
 
 fn read_stream(stream_name: &'static str, mut stream: impl Read, buffer: &Mutex<OutputBuffer>) {
@@ -248,6 +281,21 @@ fn read_stream(stream_name: &'static str, mut stream: impl Read, buffer: &Mutex<
             }
         }
     }
+}
+
+fn join_reader(
+    process_id: ProcessId,
+    stream_name: &'static str,
+    reader: Option<JoinHandle<()>>,
+) -> Result<(), ExecError> {
+    let Some(reader) = reader else {
+        return Ok(());
+    };
+
+    reader.join().map_err(|_| ExecError::ProcessFailed {
+        message: format!("{stream_name} reader for process {process_id} panicked"),
+        source: std::io::Error::other("managed output reader thread panicked"),
+    })
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {

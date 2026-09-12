@@ -9,10 +9,13 @@ Latch is intended to become a secure bridge between ChatGPT and a user's local m
 - open or create explicit workspaces
 - read, write, delete, create, and list workspace files/directories
 - capability-scoped filesystem access with traversal and symlink-escape protection
-- run blocking commands with stdout, stderr, exit code, and duration
-- start managed long-running processes
+- run blocking commands with bounded stdout/stderr, timeout, exit code, and duration
+- start managed long-running process groups
 - query managed process status/output and terminate processes
+- clean up still-running managed processes when the daemon shuts down
 - line-delimited JSON daemon over stdin/stdout
+
+`exec.run` defaults to a **5 minute timeout** and retains at most **1 MiB each** of stdout and stderr while draining both streams concurrently. Its response reports `timed_out`, `stdout_truncated`, and `stderr_truncated`.
 
 ## Architecture
 
@@ -59,7 +62,7 @@ Run the local daemon:
 cargo run -p latch-daemon
 ```
 
-Logs are JSON on stderr. Protocol responses are newline-delimited JSON on stdout.
+Logs are JSON on stderr. Protocol responses are newline-delimited JSON on stdout. Normal daemon shutdown explicitly terminates and reaps still-running managed process groups; `ProcessManager` also has a `Drop` fallback.
 
 ## Example daemon interaction
 
@@ -83,5 +86,7 @@ Use the returned `workspace_id` in later calls:
 ```
 
 Request 9 must fail with `path_outside_workspace`.
+
+Command execution is **not** a filesystem sandbox. Commands start in the workspace but retain the operating-system permissions of the user running Latch.
 
 See [`docs/architecture.md`](docs/architecture.md) for design and security details.

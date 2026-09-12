@@ -27,9 +27,9 @@ The public operations are intentionally small: text read/write, file deletion, r
 
 Owns process execution.
 
-Blocking execution waits for completion and returns exit code, stdout, stderr, and duration. Managed execution stores a child process behind a generated `ProcessId` and supports start, status, output, and kill.
+Blocking execution uses a process group, waits for completion, and returns exit code, bounded stdout/stderr, duration, timeout state, and truncation state. The default policy is a 5 minute timeout with 1 MiB retained independently for stdout and stderr. Reader threads drain both pipes concurrently even after a limit is reached, avoiding pipe backpressure deadlocks.
 
-Managed stdout/stderr are collected concurrently. Each stream retains at most the latest 1 MiB and exposes a truncation flag so a noisy development server cannot grow daemon memory without bound.
+Managed execution stores a process group behind a generated `ProcessId` and supports start, status, output, kill, and manager-wide shutdown. Managed stdout/stderr are collected concurrently; each stream retains at most the latest 1 MiB.
 
 ### `latch-protocol`
 
@@ -56,7 +56,7 @@ exec.kill
 
 Composes the other crates. It keeps an in-memory workspace registry and process manager, maps implementation errors into stable protocol errors, and exposes the engine as newline-delimited JSON over stdin/stdout.
 
-Stdout is reserved for protocol responses. Structured `tracing` logs are emitted to stderr.
+Stdout is reserved for protocol responses. Structured `tracing` logs are emitted to stderr. When the stdin/stdout transport returns, including on normal EOF or a transport error, the daemon explicitly shuts down all managed process groups before returning from `main`.
 
 ## Dependency direction
 
@@ -84,15 +84,19 @@ This is why a path such as `../../secret.txt`, an absolute `C:\\Users\\...` path
 
 ### Important execution boundary
 
-V0.1 does **not** OS-sandbox arbitrary child processes. Commands start with the workspace as their working directory, but a program the user explicitly launches retains that user's normal operating-system filesystem permissions. Restricting arbitrary subprocess filesystem/network access requires a separate process-sandbox design and is deliberately not faked by V0.1.
+V0.1 does **not** OS-sandbox arbitrary child processes. Commands start with the workspace as their working directory, but a program the user explicitly launches retains that user's normal operating-system filesystem and network permissions. Restricting arbitrary subprocess access requires a separate process-sandbox design and is deliberately not faked by V0.1.
 
 ## Execution model
 
-`exec.run` is synchronous. It uses direct argv (`program` plus an argument array), not an implicit shell string. Shell behavior only occurs when the caller explicitly launches `cmd`, PowerShell, `sh`, etc.
+`exec.run` is synchronous and uses direct argv (`program` plus an argument array), not an implicit shell string. Shell behavior only occurs when the caller explicitly launches `cmd`, PowerShell, `sh`, etc.
 
-`exec.start` creates a managed process group with piped stdout/stderr and null stdin. On Windows, the group is backed by a Job Object; on Unix, it is a POSIX process group. Reader threads continuously drain both pipes into bounded buffers. The manager retains process records so status/output remain queryable after exit.
+Each blocking command runs as a process group: a Windows Job Object on Windows or a POSIX process group on Unix. Stdout and stderr are drained on separate threads into bounded capture buffers. The V0.1 protocol uses the default 5 minute / 1 MiB-per-stream policy. If the timeout expires, Latch terminates and waits for the full process group, then returns the bounded output collected up to termination with `timed_out: true`. Exit code remains populated when the operating system provides one.
 
-`exec.kill` terminates the managed process group rather than only the direct child. This is important for development commands such as `npm run dev` that normally spawn descendants. A Unix child that deliberately detaches itself into a new session/process group can still escape this boundary; V0.1 does not pretend to provide a full OS sandbox.
+`exec.start` uses the same process-group boundary with piped stdout/stderr and null stdin. Reader threads continuously drain both pipes into bounded buffers. The manager retains process records so status/output remain queryable after exit.
+
+`exec.kill` terminates and reaps the managed process group rather than only the direct child. `ProcessManager::shutdown_all` snapshots the managed process handles, then performs best-effort cleanup process-by-process without holding the global registry mutex across kill/wait operations. Failures are logged and do not stop later processes from being cleaned up. Reader threads are joined after termination. `ProcessManager::Drop` calls the same idempotent cleanup path as a fallback, while the daemon invokes shutdown explicitly.
+
+On Unix, a child that deliberately creates a new session/process group can escape this containment boundary. Forced owner termination such as `SIGKILL` also cannot run Rust destructors. V0.1 does not present process grouping as a full OS sandbox.
 
 ## Protocol model
 
@@ -103,7 +107,7 @@ Every request includes:
 - strongly tagged `method`
 - typed `params`
 
-Responses echo the request ID and return either a typed result or a stable protocol error code. Internal Rust error sources remain available for local debugging, while the wire model avoids serializing arbitrary error chains.
+Responses echo the request ID and return either a typed result or a stable protocol error code. `exec.run` responses additionally report `timed_out`, `stdout_truncated`, and `stderr_truncated`. Internal Rust error sources remain available for local debugging, while the wire model avoids serializing arbitrary error chains.
 
 The protocol is transport-neutral. A later local socket, HTTP adapter, plugin router, or another transport can translate bytes into the same `RequestEnvelope`, call the same engine, and serialize the same `ResponseEnvelope`.
 
@@ -115,5 +119,6 @@ Networking would introduce authentication, origin trust, discovery, lifecycle, e
 
 - workspaces and managed-process records are in-memory only
 - managed output is a bounded tail, not a durable log store
+- blocking output retains the first bounded portion of each stream, not a durable log
 - arbitrary child commands are not OS-sandboxed beyond their working directory
 - filesystem API is text-oriented for V0.1; binary transfer is intentionally not yet exposed

@@ -1,0 +1,16 @@
+[package]
+name = "latch-protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+latch-core = { path = "../latch-core" }
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true

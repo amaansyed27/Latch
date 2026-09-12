@@ -108,8 +108,8 @@ impl Engine {
     fn run_command(&self, request: ExecRequest) -> Result<ResponsePayload, ProtocolError> {
         let context = self.workspace(request.workspace_id)?;
         let spec = CommandSpec::new(request.program, request.args);
-        let result = run_blocking(&context.workspace, &spec)
-            .map_err(|error| map_exec_error(&error))?;
+        let result =
+            run_blocking(&context.workspace, &spec).map_err(|error| map_exec_error(&error))?;
         Ok(ResponsePayload::Exec(ExecResponse {
             exit_code: result.exit_code,
             stdout: result.stdout,

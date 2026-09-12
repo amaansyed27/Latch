@@ -1,0 +1,18 @@
+[package]
+name = "latch-exec"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+command-group.workspace = true
+latch-core = { path = "../latch-core" }
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+tempfile = "3.21"
+
+[lints]
+workspace = true

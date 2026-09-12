@@ -30,19 +30,18 @@ pub(crate) fn spawn_grouped(
     let stdout = child.inner().stdout.take();
     let stderr = child.inner().stderr.take();
 
-    match (stdout, stderr) {
-        (Some(stdout), Some(stderr)) => Ok(SpawnedGroup {
+    if let (Some(stdout), Some(stderr)) = (stdout, stderr) {
+        Ok(SpawnedGroup {
             child,
             stdout,
             stderr,
-        }),
-        _ => {
-            cleanup_incomplete_spawn(&mut child, &spec.program);
-            Err(ExecError::ProcessFailed {
-                message: format!("output pipes were not available for {}", spec.program),
-                source: std::io::Error::other("output pipe missing after spawn"),
-            })
-        }
+        })
+    } else {
+        cleanup_incomplete_spawn(&mut child, &spec.program);
+        Err(ExecError::ProcessFailed {
+            message: format!("output pipes were not available for {}", spec.program),
+            source: std::io::Error::other("output pipe missing after spawn"),
+        })
     }
 }
 

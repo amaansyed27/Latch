@@ -61,15 +61,11 @@ Stdout is reserved for protocol responses. Structured `tracing` logs are emitted
 ## Dependency direction
 
 ```text
-latch-core
-  ↑   ↑
-  |   |
-latch-fs   latch-exec
-   \       /
-    \     /
-  latch-protocol   (depends only on latch-core)
-        \          /
-         latch-daemon
+                  latch-core
+             /        |        \
+      latch-fs    latch-exec    latch-protocol
+             \        |        /
+                  latch-daemon
 ```
 
 More precisely, `latch-daemon` depends on all four libraries; `latch-fs` and `latch-exec` depend on `latch-core`; `latch-protocol` depends only on `latch-core`. There are no circular dependencies.

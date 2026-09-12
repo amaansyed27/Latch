@@ -9,7 +9,7 @@ use std::{
 
 use command_group::{CommandGroup, GroupChild};
 use latch_core::{ProcessId, Workspace};
-use tracing::{info, instrument};
+use tracing::{info, instrument, warn};
 
 use crate::{
     CommandSpec, ExecError, ManagedOutput, ManagedStreamOutput, ProcessState, ProcessStatus,
@@ -60,8 +60,8 @@ impl ProcessManager {
 
         let stdout_buffer = Arc::new(Mutex::new(OutputBuffer::default()));
         let stderr_buffer = Arc::new(Mutex::new(OutputBuffer::default()));
-        spawn_reader(stdout, Arc::clone(&stdout_buffer));
-        spawn_reader(stderr, Arc::clone(&stderr_buffer));
+        spawn_reader("stdout", stdout, Arc::clone(&stdout_buffer));
+        spawn_reader("stderr", stderr, Arc::clone(&stderr_buffer));
 
         let process_id = ProcessId::new();
         let os_pid = child.id();
@@ -225,19 +225,29 @@ trait ManagedStream: Read + Send + 'static {}
 impl ManagedStream for ChildStdout {}
 impl ManagedStream for ChildStderr {}
 
-fn spawn_reader(stream: impl ManagedStream, buffer: Arc<Mutex<OutputBuffer>>) {
-    thread::spawn(move || read_stream(stream, &buffer));
+fn spawn_reader(
+    stream_name: &'static str,
+    stream: impl ManagedStream,
+    buffer: Arc<Mutex<OutputBuffer>>,
+) {
+    thread::spawn(move || read_stream(stream_name, stream, &buffer));
 }
 
-fn read_stream(mut stream: impl Read, buffer: &Mutex<OutputBuffer>) {
+fn read_stream(stream_name: &'static str, mut stream: impl Read, buffer: &Mutex<OutputBuffer>) {
     let mut chunk = [0_u8; 8192];
     loop {
         match stream.read(&mut chunk) {
-            Ok(0) | Err(_) => break,
+            Ok(0) => {
+                lock(buffer).complete = true;
+                return;
+            }
             Ok(count) => lock(buffer).append(&chunk[..count]),
+            Err(error) => {
+                warn!(stream = stream_name, error = %error, "managed process output read failed");
+                return;
+            }
         }
     }
-    lock(buffer).complete = true;
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {

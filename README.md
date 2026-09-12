@@ -17,15 +17,13 @@ Latch is intended to become a secure bridge between ChatGPT and a user's local m
 ## Architecture
 
 ```text
-                 latch-core
-                /          \
-         latch-fs          latch-exec
-                \          /
-              latch-protocol
-                    |
-              latch-daemon
-                    |
-              stdin / stdout
+                  latch-core
+             /        |        \
+      latch-fs    latch-exec    latch-protocol
+             \        |        /
+                  latch-daemon
+                       |
+                 stdin / stdout
 ```
 
 `latch-protocol` depends only on `latch-core`; `latch-daemon` composes the filesystem, execution, and protocol crates. Filesystem and execution implementations never depend on a transport.

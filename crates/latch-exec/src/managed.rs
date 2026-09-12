@@ -1,12 +1,13 @@
 use std::{
     collections::HashMap,
     io::Read,
-    process::{Child, ChildStderr, ChildStdout, Command, ExitStatus, Stdio},
+    process::{ChildStderr, ChildStdout, Command, ExitStatus, Stdio},
     sync::{Arc, Mutex, MutexGuard},
     thread,
     time::Instant,
 };
 
+use command_group::{CommandGroup, GroupChild};
 use latch_core::{ProcessId, Workspace};
 use tracing::{info, instrument};
 
@@ -28,16 +29,20 @@ impl ProcessManager {
 
     #[instrument(skip(self, workspace, spec), fields(workspace_id = %workspace.id(), program = %spec.program))]
     pub fn start(&self, workspace: &Workspace, spec: &CommandSpec) -> Result<ProcessId, ExecError> {
-        let mut child = Command::new(&spec.program)
+        let mut command = Command::new(&spec.program);
+        command
             .args(&spec.args)
             .current_dir(workspace.root())
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
+            .stderr(Stdio::piped());
+
+        let mut child = command
+            .group_spawn()
             .map_err(|source| ExecError::spawn(&spec.program, source))?;
 
         let stdout = child
+            .inner()
             .stdout
             .take()
             .ok_or_else(|| ExecError::ProcessFailed {
@@ -45,6 +50,7 @@ impl ProcessManager {
                 source: std::io::Error::other("stdout pipe missing after spawn"),
             })?;
         let stderr = child
+            .inner()
             .stderr
             .take()
             .ok_or_else(|| ExecError::ProcessFailed {
@@ -128,7 +134,7 @@ impl ProcessManager {
 
 #[derive(Debug)]
 struct ManagedProcess {
-    child: Child,
+    child: GroupChild,
     started: Instant,
     finished: Option<FinishedProcess>,
     stdout: Arc<Mutex<OutputBuffer>>,

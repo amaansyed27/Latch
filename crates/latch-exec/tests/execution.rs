@@ -83,6 +83,20 @@ fn starts_queries_outputs_and_terminates_managed_process() {
 
     let status = manager.kill(process_id).unwrap();
     assert!(matches!(status.state, ProcessState::Exited { .. }));
+
+    let mut streams_complete = false;
+    for _ in 0..40 {
+        let output = manager.output(process_id).unwrap();
+        if output.stdout.complete && output.stderr.complete {
+            streams_complete = true;
+            break;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    assert!(
+        streams_complete,
+        "terminating a managed process should close descendant-owned output pipes"
+    );
 }
 
 #[test]

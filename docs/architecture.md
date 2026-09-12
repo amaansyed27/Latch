@@ -94,9 +94,9 @@ V0.1 does **not** OS-sandbox arbitrary child processes. Commands start with the 
 
 `exec.run` is synchronous. It uses direct argv (`program` plus an argument array), not an implicit shell string. Shell behavior only occurs when the caller explicitly launches `cmd`, PowerShell, `sh`, etc.
 
-`exec.start` creates a child with piped stdout/stderr and null stdin. Reader threads continuously drain both pipes into bounded buffers. The manager retains process records so status/output remain queryable after exit.
+`exec.start` creates a managed process group with piped stdout/stderr and null stdin. On Windows, the group is backed by a Job Object; on Unix, it is a POSIX process group. Reader threads continuously drain both pipes into bounded buffers. The manager retains process records so status/output remain queryable after exit.
 
-`exec.kill` currently asks the OS to terminate the direct child process. Descendant-process-tree termination is not yet guaranteed on every platform; this is a known V0.1 limitation, particularly for launchers that detach descendants.
+`exec.kill` terminates the managed process group rather than only the direct child. This is important for development commands such as `npm run dev` that normally spawn descendants. A Unix child that deliberately detaches itself into a new session/process group can still escape this boundary; V0.1 does not pretend to provide a full OS sandbox.
 
 ## Protocol model
 
@@ -119,6 +119,5 @@ Networking would introduce authentication, origin trust, discovery, lifecycle, e
 
 - workspaces and managed-process records are in-memory only
 - managed output is a bounded tail, not a durable log store
-- process-tree termination is not yet guaranteed across all launchers/platforms
 - arbitrary child commands are not OS-sandboxed beyond their working directory
 - filesystem API is text-oriented for V0.1; binary transfer is intentionally not yet exposed

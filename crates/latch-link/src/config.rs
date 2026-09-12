@@ -123,13 +123,15 @@ mod tests {
 
     #[test]
     fn empty_pairing_token_is_rejected() {
-        let error = LinkConfig::new(
+        let result = LinkConfig::new(
             "https://router.example.com",
             "   ".to_owned(),
             "laptop".to_owned(),
             None,
-        )
-        .unwrap_err();
+        );
+        let Err(error) = result else {
+            panic!("empty pairing token was accepted");
+        };
 
         assert!(matches!(
             error,

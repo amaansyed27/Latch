@@ -32,3 +32,36 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace
       - run: cargo build --workspace
+
+  router:
+    name: Router quality gates
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: router
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  remote-e2e:
+    name: Router to local engine E2E
+    runs-on: ubuntu-latest
+    needs: [quality, router]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: cargo build -p latch-link
+      - run: npm install --prefix router
+      - run: npm run build --prefix router
+      - run: node router/scripts/e2e-local.mjs

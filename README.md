@@ -2,52 +2,48 @@
 
 **Latch for ChatGPT — Your local machine, inside ChatGPT.**
 
-Latch is intended to become a secure bridge between ChatGPT and a user's local machine. **V0.1 is deliberately smaller:** it is only the local workspace filesystem and process-execution foundation. There is no ChatGPT integration, networking, browser automation, MCP, computer use, or authentication yet.
+Latch is a secure bridge foundation for letting a remote control plane invoke typed operations on a user's own machine. V0.2 adds the **Remote Router Proof**: the existing V0.1 local engine remains the execution environment, while a Vercel Router relays authenticated requests to an outbound-only local connection.
 
-## V0.1
+The ChatGPT Plugin/App is **not** part of V0.2.
 
-- open or create explicit workspaces
-- read, write, delete, create, and list workspace files/directories
-- capability-scoped filesystem access with traversal and symlink-escape protection
-- run blocking commands with bounded stdout/stderr, timeout, exit code, and duration
-- start managed long-running process groups
-- query managed process status/output and terminate processes
-- clean up still-running managed processes when the daemon shuts down
-- line-delimited JSON daemon over stdin/stdout
-
-`exec.run` defaults to a **5 minute timeout** and retains at most **1 MiB each** of stdout and stderr while draining both streams concurrently. Its response reports `timed_out`, `stdout_truncated`, and `stderr_truncated`.
-
-## Architecture
+## V0.2 architecture
 
 ```text
-                  latch-core
-             /        |        \
-      latch-fs    latch-exec    latch-protocol
-             \        |        /
-                  latch-daemon
-                       |
-                 stdin / stdout
+future ChatGPT Plugin
+        |
+        v
+   Latch Router (Vercel)
+        |
+        | authenticated relay
+        v
+     latch-link
+   outbound WebSocket
+        |
+        v
+    latch-engine
+     /       \
+latch-fs   latch-exec
 ```
 
-`latch-protocol` depends only on `latch-core`; `latch-daemon` composes the filesystem, execution, and protocol crates. Filesystem and execution implementations never depend on a transport.
+`latch-engine` is the reusable V0.1 composition layer. `latch-daemon` still exposes the original newline-delimited stdin/stdout transport; `latch-link` is a second transport adapter and does not duplicate filesystem or process logic.
 
-## Workspace
+The deployed Router uses Vercel WebSockets plus Redis for ephemeral presence and cross-instance request correlation. The Router never executes user commands.
 
-```text
-Latch/
-├── Cargo.toml
-├── crates/
-│   ├── latch-core/
-│   ├── latch-fs/
-│   ├── latch-exec/
-│   ├── latch-protocol/
-│   └── latch-daemon/
-├── docs/
-│   └── architecture.md
-└── .github/workflows/ci.yml
-```
+## Local capabilities
+
+- capability-scoped workspace filesystem operations
+- bounded/timeout-protected `exec.run`
+- managed process start/status/output/kill and shutdown cleanup
+- versioned `latch-protocol` v1
+- stdin/stdout local daemon
+- outbound-only Router connection with persisted `DeviceId`
+- automatic reconnect with bounded exponential backoff
+
+Command execution is **not** an OS sandbox. Commands start in their Latch workspace but inherit the permissions of the user running Latch.
 
 ## Build and test
+
+Rust:
 
 ```bash
 cargo fmt --all -- --check
@@ -56,37 +52,34 @@ cargo test --workspace
 cargo build --workspace
 ```
 
-Run the local daemon:
+Router:
 
 ```bash
-cargo run -p latch-daemon
+cd router
+npm install
+npm run lint
+npm run typecheck
+npm test
+npm run build
 ```
 
-Logs are JSON on stderr. Protocol responses are newline-delimited JSON on stdout. Normal daemon shutdown explicitly terminates and reaps still-running managed process groups; `ProcessManager` also has a `Drop` fallback.
+The cross-language local relay proof is run in CI after building both sides:
 
-## Example daemon interaction
-
-Each input is one JSON line. On Windows, replace the example workspace with a path you want Latch to own.
-
-```json
-{"id":"1","version":1,"method":"workspace.create","params":{"path":"D:\\Temp\\latch-demo"}}
+```bash
+node router/scripts/e2e-local.mjs
 ```
 
-Use the returned `workspace_id` in later calls:
+## Start Latch Link
 
-```json
-{"id":"2","version":1,"method":"fs.write","params":{"workspace_id":"<workspace-id>","path":"hello.txt","contents":"hello from Latch"}}
-{"id":"3","version":1,"method":"fs.read","params":{"workspace_id":"<workspace-id>","path":"hello.txt"}}
-{"id":"4","version":1,"method":"exec.run","params":{"workspace_id":"<workspace-id>","program":"cmd","args":["/C","dir"]}}
-{"id":"5","version":1,"method":"exec.start","params":{"workspace_id":"<workspace-id>","program":"powershell","args":["-NoProfile","-Command","while ($true) { Write-Output tick; Start-Sleep 2 }"]}}
-{"id":"6","version":1,"method":"exec.status","params":{"process_id":"<process-id>"}}
-{"id":"7","version":1,"method":"exec.output","params":{"process_id":"<process-id>"}}
-{"id":"8","version":1,"method":"exec.kill","params":{"process_id":"<process-id>"}}
-{"id":"9","version":1,"method":"fs.read","params":{"workspace_id":"<workspace-id>","path":"..\\outside.txt"}}
+Configure the deployed Router URL, its pairing token, and a human-readable device name. On Windows PowerShell:
+
+```powershell
+$env:LATCH_ROUTER_URL="https://<your-latch-router>.vercel.app"
+$env:LATCH_PAIRING_TOKEN="<pairing-token>"
+$env:LATCH_DEVICE_NAME=$env:COMPUTERNAME
+cargo run -p latch-link
 ```
 
-Request 9 must fail with `path_outside_workspace`.
+The generated `DeviceId` is persisted outside project workspaces. On Windows the default is `%LOCALAPPDATA%\Latch\device.json`.
 
-Command execution is **not** a filesystem sandbox. Commands start in the workspace but retain the operating-system permissions of the user running Latch.
-
-See [`docs/architecture.md`](docs/architecture.md) for design and security details.
+See [`docs/router.md`](docs/router.md) for Router setup, deployment, pairing, APIs, and the manual `node --version` acceptance test. See [`docs/architecture.md`](docs/architecture.md) for local security boundaries and dependency direction.

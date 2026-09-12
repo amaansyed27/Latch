@@ -1,20 +1,16 @@
 [package]
-name = "latch-daemon"
+name = "latch-engine"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-latch-engine = { path = "../latch-engine" }
-latch-protocol = { path = "../latch-protocol" }
-serde_json.workspace = true
-tracing.workspace = true
-tracing-subscriber.workspace = true
-
-[dev-dependencies]
 latch-core = { path = "../latch-core" }
-tempfile = "3.21"
+latch-exec = { path = "../latch-exec" }
+latch-fs = { path = "../latch-fs" }
+latch-protocol = { path = "../latch-protocol" }
+tracing.workspace = true
 
 [lints]
 workspace = true

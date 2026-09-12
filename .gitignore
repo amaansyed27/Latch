@@ -1,3 +1,8 @@
 /target
 *.log
 .DS_Store
+/router/node_modules
+/router/dist
+/router/.env*
+!/router/.env.example
+.vercel

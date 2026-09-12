@@ -9,10 +9,10 @@ use latch_protocol::{
     DirectoryEntryResponse, DirectoryResponse, EntryKindResponse, ErrorCode, ExecRequest,
     ExecResponse, FileContentResponse, PathRequest, ProcessOutputResponse, ProcessRequest,
     ProcessStartedResponse, ProcessStateResponse, ProcessStatusResponse,
-    ProcessStreamOutputResponse, ProtocolError, Request, ResponsePayload, WorkspaceResponse,
-    WriteRequest,
+    ProcessStreamOutputResponse, ProtocolError, Request, RequestEnvelope, ResponseEnvelope,
+    ResponsePayload, WorkspaceResponse, WriteRequest, PROTOCOL_VERSION,
 };
-use tracing::info;
+use tracing::{error, info};
 
 #[derive(Default)]
 pub struct Engine {
@@ -23,6 +23,32 @@ pub struct Engine {
 impl Engine {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn handle_envelope(&mut self, request: RequestEnvelope) -> ResponseEnvelope {
+        if request.version != PROTOCOL_VERSION {
+            return ResponseEnvelope::error(
+                Some(request.id),
+                ProtocolError {
+                    code: ErrorCode::UnsupportedVersion,
+                    message: format!(
+                        "protocol version {} is unsupported; expected {PROTOCOL_VERSION}",
+                        request.version
+                    ),
+                },
+            );
+        }
+
+        let id = request.id;
+        match self.handle(request.request) {
+            Ok(result) => ResponseEnvelope::success(id, result),
+            Err(protocol_error) => {
+                if protocol_error.code == ErrorCode::Io {
+                    error!(code = ?protocol_error.code, "serious internal operation error");
+                }
+                ResponseEnvelope::error(Some(id), protocol_error)
+            }
+        }
     }
 
     pub fn handle(&mut self, request: Request) -> Result<ResponsePayload, ProtocolError> {
@@ -270,4 +296,30 @@ fn map_exec_error(error: &ExecError) -> ProtocolError {
 
 fn duration_ms(duration: std::time::Duration) -> u64 {
     u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+}
+
+#[cfg(test)]
+mod tests {
+    use latch_protocol::{ErrorCode, Request, RequestEnvelope, ResponseOutcome};
+
+    use super::*;
+
+    #[test]
+    fn envelope_rejects_unsupported_protocol_versions() {
+        let mut engine = Engine::new();
+        let response = engine.handle_envelope(RequestEnvelope {
+            id: "bad-version".to_owned(),
+            version: PROTOCOL_VERSION + 1,
+            request: Request::WorkspaceCreate(latch_protocol::WorkspacePathRequest {
+                path: "unused".to_owned(),
+            }),
+        });
+
+        match response.outcome {
+            ResponseOutcome::Error { error } => {
+                assert_eq!(error.code, ErrorCode::UnsupportedVersion);
+            }
+            outcome @ ResponseOutcome::Ok { .. } => panic!("unexpected response: {outcome:?}"),
+        }
+    }
 }

@@ -223,7 +223,7 @@ fn drop_fallback_terminates_running_process() {
             .unwrap();
     }
 
-    thread::sleep(Duration::from_millis(1_000));
+    thread::sleep(Duration::from_secs(1));
     assert!(
         !marker.exists(),
         "managed process survived ProcessManager drop and wrote its marker"

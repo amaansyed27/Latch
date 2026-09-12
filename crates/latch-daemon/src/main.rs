@@ -1,11 +1,9 @@
-mod engine;
 mod transport;
 
 use std::error::Error;
 
+use latch_engine::Engine;
 use tracing_subscriber::EnvFilter;
-
-use crate::engine::Engine;
 
 fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     init_logging()?;

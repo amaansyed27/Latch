@@ -36,9 +36,9 @@ impl Engine {
             Request::FsList(request) => self.list_dir(request),
             Request::ExecRun(request) => self.run_command(request),
             Request::ExecStart(request) => self.start_process(request),
-            Request::ExecStatus(request) => self.process_status(request),
-            Request::ExecOutput(request) => self.process_output(request),
-            Request::ExecKill(request) => self.kill_process(request),
+            Request::ExecStatus(request) => self.process_status(&request),
+            Request::ExecOutput(request) => self.process_output(&request),
+            Request::ExecKill(request) => self.kill_process(&request),
         }
     }
 
@@ -130,7 +130,7 @@ impl Engine {
         }))
     }
 
-    fn process_status(&self, request: ProcessRequest) -> Result<ResponsePayload, ProtocolError> {
+    fn process_status(&self, request: &ProcessRequest) -> Result<ResponsePayload, ProtocolError> {
         let status = self
             .processes
             .status(request.process_id)
@@ -141,7 +141,7 @@ impl Engine {
         }))
     }
 
-    fn process_output(&self, request: ProcessRequest) -> Result<ResponsePayload, ProtocolError> {
+    fn process_output(&self, request: &ProcessRequest) -> Result<ResponsePayload, ProtocolError> {
         let output = self
             .processes
             .output(request.process_id)
@@ -152,7 +152,7 @@ impl Engine {
         }))
     }
 
-    fn kill_process(&self, request: ProcessRequest) -> Result<ResponsePayload, ProtocolError> {
+    fn kill_process(&self, request: &ProcessRequest) -> Result<ResponsePayload, ProtocolError> {
         let status = self
             .processes
             .kill(request.process_id)

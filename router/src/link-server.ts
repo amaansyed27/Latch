@@ -288,9 +288,14 @@ export class LinkServer {
         request_id: message.request_id,
         request: message.request,
       });
-    } catch {
+    } catch (error) {
       clearTimeout(timer);
       this.#pending.delete(message.request_id);
+      console.warn('device request write failed', {
+        device_id: message.device_id,
+        error_name: error instanceof Error ? error.name : 'unknown',
+        error_message: error instanceof Error ? error.message : 'unknown',
+      });
       await this.coordinator.respond(message.request_id, {
         kind: 'error',
         error: {

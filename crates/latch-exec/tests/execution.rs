@@ -67,7 +67,13 @@ fn starts_queries_outputs_and_terminates_managed_process() {
 
     let mut saw_output = false;
     for _ in 0..20 {
-        if manager.output(process_id).unwrap().stdout.contains("ready") {
+        if manager
+            .output(process_id)
+            .unwrap()
+            .stdout
+            .text
+            .contains("ready")
+        {
             saw_output = true;
             break;
         }

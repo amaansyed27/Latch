@@ -175,13 +175,16 @@ pub enum ProcessStateResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProcessStreamOutputResponse {
+    pub text: String,
+    pub truncated: bool,
+    pub complete: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProcessOutputResponse {
-    pub stdout: String,
-    pub stderr: String,
-    pub stdout_truncated: bool,
-    pub stderr_truncated: bool,
-    pub stdout_complete: bool,
-    pub stderr_complete: bool,
+    pub stdout: ProcessStreamOutputResponse,
+    pub stderr: ProcessStreamOutputResponse,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

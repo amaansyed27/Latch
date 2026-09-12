@@ -10,7 +10,9 @@ use std::{
 use latch_core::{ProcessId, Workspace};
 use tracing::{info, instrument};
 
-use crate::{CommandSpec, ExecError, ManagedOutput, ProcessState, ProcessStatus};
+use crate::{
+    CommandSpec, ExecError, ManagedOutput, ManagedStreamOutput, ProcessState, ProcessStatus,
+};
 
 const MAX_STREAM_BYTES: usize = 1024 * 1024;
 
@@ -87,14 +89,7 @@ impl ProcessManager {
         let stdout = lock(&process.stdout).snapshot();
         let stderr = lock(&process.stderr).snapshot();
 
-        Ok(ManagedOutput {
-            stdout: stdout.text,
-            stderr: stderr.text,
-            stdout_truncated: stdout.truncated,
-            stderr_truncated: stderr.truncated,
-            stdout_complete: stdout.complete,
-            stderr_complete: stderr.complete,
-        })
+        Ok(ManagedOutput { stdout, stderr })
     }
 
     #[instrument(skip(self), fields(%process_id))]
@@ -211,8 +206,8 @@ impl OutputBuffer {
         self.bytes.extend_from_slice(chunk);
     }
 
-    fn snapshot(&self) -> OutputSnapshot {
-        OutputSnapshot {
+    fn snapshot(&self) -> ManagedStreamOutput {
+        ManagedStreamOutput {
             text: String::from_utf8_lossy(&self.bytes).into_owned(),
             truncated: self.truncated,
             complete: self.complete,
@@ -220,31 +215,23 @@ impl OutputBuffer {
     }
 }
 
-#[derive(Debug)]
-struct OutputSnapshot {
-    text: String,
-    truncated: bool,
-    complete: bool,
-}
-
 trait ManagedStream: Read + Send + 'static {}
 impl ManagedStream for ChildStdout {}
 impl ManagedStream for ChildStderr {}
 
 fn spawn_reader(stream: impl ManagedStream, buffer: Arc<Mutex<OutputBuffer>>) {
-    thread::spawn(move || read_stream(stream, buffer));
+    thread::spawn(move || read_stream(stream, &buffer));
 }
 
-fn read_stream(mut stream: impl Read, buffer: Arc<Mutex<OutputBuffer>>) {
+fn read_stream(mut stream: impl Read, buffer: &Mutex<OutputBuffer>) {
     let mut chunk = [0_u8; 8192];
     loop {
         match stream.read(&mut chunk) {
-            Ok(0) => break,
-            Ok(count) => lock(&buffer).append(&chunk[..count]),
-            Err(_) => break,
+            Ok(0) | Err(_) => break,
+            Ok(count) => lock(buffer).append(&chunk[..count]),
         }
     }
-    lock(&buffer).complete = true;
+    lock(buffer).complete = true;
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {

@@ -39,11 +39,14 @@ pub struct ProcessStatus {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ManagedStreamOutput {
+    pub text: String,
+    pub truncated: bool,
+    pub complete: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ManagedOutput {
-    pub stdout: String,
-    pub stderr: String,
-    pub stdout_truncated: bool,
-    pub stderr_truncated: bool,
-    pub stdout_complete: bool,
-    pub stderr_complete: bool,
+    pub stdout: ManagedStreamOutput,
+    pub stderr: ManagedStreamOutput,
 }

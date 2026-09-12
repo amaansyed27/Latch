@@ -6,7 +6,8 @@ use latch_fs::{EntryKind, FsError, WorkspaceFs};
 use latch_protocol::{
     DirectoryEntryResponse, DirectoryResponse, EntryKindResponse, ErrorCode, ExecResponse,
     FileContentResponse, ProcessOutputResponse, ProcessStartedResponse, ProcessStateResponse,
-    ProcessStatusResponse, ProtocolError, Request, ResponsePayload, WorkspaceResponse,
+    ProcessStatusResponse, ProcessStreamOutputResponse, ProtocolError, Request, ResponsePayload,
+    WorkspaceResponse,
 };
 use tracing::info;
 
@@ -110,12 +111,16 @@ impl Engine {
                     .output(request.process_id)
                     .map_err(map_exec_error)?;
                 Ok(ResponsePayload::ProcessOutput(ProcessOutputResponse {
-                    stdout: output.stdout,
-                    stderr: output.stderr,
-                    stdout_truncated: output.stdout_truncated,
-                    stderr_truncated: output.stderr_truncated,
-                    stdout_complete: output.stdout_complete,
-                    stderr_complete: output.stderr_complete,
+                    stdout: ProcessStreamOutputResponse {
+                        text: output.stdout.text,
+                        truncated: output.stdout.truncated,
+                        complete: output.stdout.complete,
+                    },
+                    stderr: ProcessStreamOutputResponse {
+                        text: output.stderr.text,
+                        truncated: output.stderr.truncated,
+                        complete: output.stderr.complete,
+                    },
                 }))
             }
             Request::ExecKill(request) => {

@@ -128,40 +128,22 @@ impl LinkClient {
 
             match message {
                 Message::Text(text) => {
-                    let server_message = match serde_json::from_str::<ServerMessage>(text.as_ref())
-                    {
-                        Ok(message) => message,
-                        Err(_) => break Err(LinkError::InvalidLinkMessage),
+                    let Ok(server_message) =
+                        serde_json::from_str::<ServerMessage>(text.as_ref())
+                    else {
+                        break Err(LinkError::InvalidLinkMessage);
                     };
                     match server_message {
                         ServerMessage::Request {
                             request_id,
                             request,
-                        } => {
-                            let engine = Arc::clone(&self.engine);
-                            let sender = outbound_tx.clone();
-                            requests.spawn(async move {
-                                let execution = tokio::task::spawn_blocking(move || {
-                                    let mut engine = lock_engine(&engine);
-                                    execute_remote(&mut engine, request_id, request)
-                                })
-                                .await;
-
-                                match execution {
-                                    Ok(response) => match serde_json::to_string(&response) {
-                                        Ok(json) => {
-                                            let _ = sender.send(Message::Text(json.into()));
-                                        }
-                                        Err(error) => {
-                                            warn!(error = %error, "failed to serialize remote response");
-                                        }
-                                    },
-                                    Err(error) => {
-                                        warn!(error = %error, "remote execution task failed");
-                                    }
-                                }
-                            });
-                        }
+                        } => spawn_remote_request(
+                            &mut requests,
+                            &self.engine,
+                            &outbound_tx,
+                            request_id,
+                            request,
+                        ),
                         ServerMessage::Error { code, message } => {
                             warn!(%code, %message, "router reported link error");
                         }
@@ -198,6 +180,38 @@ pub fn execute_remote(
         request_id,
         response: engine.handle_envelope(request),
     }
+}
+
+fn spawn_remote_request(
+    requests: &mut JoinSet<()>,
+    engine: &SharedEngine,
+    sender: &mpsc::UnboundedSender<Message>,
+    request_id: String,
+    request: RequestEnvelope,
+) {
+    let engine = Arc::clone(engine);
+    let sender = sender.clone();
+    requests.spawn(async move {
+        let execution = tokio::task::spawn_blocking(move || {
+            let mut engine = lock_engine(&engine);
+            execute_remote(&mut engine, request_id, request)
+        })
+        .await;
+
+        match execution {
+            Ok(response) => match serde_json::to_string(&response) {
+                Ok(json) => {
+                    let _ = sender.send(Message::Text(json.into()));
+                }
+                Err(error) => {
+                    warn!(error = %error, "failed to serialize remote response");
+                }
+            },
+            Err(error) => {
+                warn!(error = %error, "remote execution task failed");
+            }
+        }
+    });
 }
 
 fn parse_server_message(message: Message) -> Result<ServerMessage, LinkError> {

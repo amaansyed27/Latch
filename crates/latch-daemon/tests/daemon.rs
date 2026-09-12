@@ -36,8 +36,8 @@ impl DaemonClient {
         }
     }
 
-    fn request(&mut self, id: &str, method: &str, params: Value) -> ResponseEnvelope {
-        self.send_value(json!({
+    fn request(&mut self, id: &str, method: &str, params: &Value) -> ResponseEnvelope {
+        self.send_value(&json!({
             "id": id,
             "version": PROTOCOL_VERSION,
             "method": method,
@@ -45,8 +45,8 @@ impl DaemonClient {
         }))
     }
 
-    fn send_value(&mut self, request: Value) -> ResponseEnvelope {
-        self.send_raw(&serde_json::to_string(&request).unwrap())
+    fn send_value(&mut self, request: &Value) -> ResponseEnvelope {
+        self.send_raw(&serde_json::to_string(request).unwrap())
     }
 
     fn send_raw(&mut self, request: &str) -> ResponseEnvelope {
@@ -158,7 +158,7 @@ fn daemon_exercises_v01_protocol_across_process_boundary() {
     let workspace_id = match success(daemon.request(
         "1",
         "workspace.create",
-        json!({"path": workspace_path.to_string_lossy()}),
+        &json!({"path": workspace_path.to_string_lossy()}),
     )) {
         ResponsePayload::Workspace(response) => response.workspace_id,
         other => panic!("unexpected workspace response: {other:?}"),
@@ -168,7 +168,7 @@ fn daemon_exercises_v01_protocol_across_process_boundary() {
         success(daemon.request(
             "2",
             "fs.write",
-            json!({
+            &json!({
                 "workspace_id": workspace_id,
                 "path": "hello.txt",
                 "contents": "hello from daemon"
@@ -180,7 +180,7 @@ fn daemon_exercises_v01_protocol_across_process_boundary() {
     match success(daemon.request(
         "3",
         "fs.read",
-        json!({"workspace_id": workspace_id, "path": "hello.txt"}),
+        &json!({"workspace_id": workspace_id, "path": "hello.txt"}),
     )) {
         ResponsePayload::FileContent(response) => {
             assert_eq!(response.contents, "hello from daemon");
@@ -188,7 +188,7 @@ fn daemon_exercises_v01_protocol_across_process_boundary() {
         other => panic!("unexpected read response: {other:?}"),
     }
 
-    match success(daemon.request("4", "exec.run", run_request(workspace_id))) {
+    match success(daemon.request("4", "exec.run", &run_request(workspace_id))) {
         ResponsePayload::Exec(response) => {
             assert_eq!(response.exit_code, Some(0));
             assert!(response.stdout.contains("daemon-run"));
@@ -199,12 +199,17 @@ fn daemon_exercises_v01_protocol_across_process_boundary() {
         other => panic!("unexpected exec.run response: {other:?}"),
     }
 
-    let process_id = match success(daemon.request("5", "exec.start", start_request(workspace_id))) {
-        ResponsePayload::ProcessStarted(response) => response.process_id,
-        other => panic!("unexpected exec.start response: {other:?}"),
-    };
+    let process_id =
+        match success(daemon.request("5", "exec.start", &start_request(workspace_id))) {
+            ResponsePayload::ProcessStarted(response) => response.process_id,
+            other => panic!("unexpected exec.start response: {other:?}"),
+        };
 
-    match success(daemon.request("6", "exec.status", json!({"process_id": process_id}))) {
+    match success(daemon.request(
+        "6",
+        "exec.status",
+        &json!({"process_id": process_id}),
+    )) {
         ResponsePayload::ProcessStatus(response) => {
             assert!(matches!(response.state, ProcessStateResponse::Running));
         }
@@ -216,7 +221,7 @@ fn daemon_exercises_v01_protocol_across_process_boundary() {
         match success(daemon.request(
             &format!("output-{attempt}"),
             "exec.output",
-            json!({"process_id": process_id}),
+            &json!({"process_id": process_id}),
         )) {
             ResponsePayload::ProcessOutput(response) => {
                 if response.stdout.text.contains("ready") {
@@ -230,7 +235,11 @@ fn daemon_exercises_v01_protocol_across_process_boundary() {
     }
     assert!(saw_ready, "managed output never became observable");
 
-    match success(daemon.request("7", "exec.kill", json!({"process_id": process_id}))) {
+    match success(daemon.request(
+        "7",
+        "exec.kill",
+        &json!({"process_id": process_id}),
+    )) {
         ResponsePayload::ProcessStatus(response) => {
             assert!(matches!(
                 response.state,
@@ -243,7 +252,7 @@ fn daemon_exercises_v01_protocol_across_process_boundary() {
     let traversal = error(daemon.request(
         "8",
         "fs.read",
-        json!({"workspace_id": workspace_id, "path": "../outside.txt"}),
+        &json!({"workspace_id": workspace_id, "path": "../outside.txt"}),
     ));
     assert_eq!(traversal.code, ErrorCode::PathOutsideWorkspace);
 
@@ -258,7 +267,7 @@ fn daemon_reports_transport_protocol_errors() {
     let malformed = error(daemon.send_raw("{not-json"));
     assert_eq!(malformed.code, ErrorCode::InvalidRequest);
 
-    let unsupported = error(daemon.send_value(json!({
+    let unsupported = error(daemon.send_value(&json!({
         "id": "bad-version",
         "version": PROTOCOL_VERSION + 1,
         "method": "workspace.create",
@@ -279,14 +288,18 @@ fn daemon_shutdown_terminates_managed_processes() {
     let workspace_id = match success(daemon.request(
         "1",
         "workspace.create",
-        json!({"path": workspace_path.to_string_lossy()}),
+        &json!({"path": workspace_path.to_string_lossy()}),
     )) {
         ResponsePayload::Workspace(response) => response.workspace_id,
         other => panic!("unexpected workspace response: {other:?}"),
     };
 
     assert!(matches!(
-        success(daemon.request("2", "exec.start", delayed_marker_request(workspace_id),)),
+        success(daemon.request(
+            "2",
+            "exec.start",
+            &delayed_marker_request(workspace_id),
+        )),
         ResponsePayload::ProcessStarted(_)
     ));
 

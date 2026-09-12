@@ -25,13 +25,13 @@ impl LinkConfig {
         let pairing_token = required_env(PAIRING_TOKEN_ENV)?;
         let device_name = required_env(DEVICE_NAME_ENV)?;
         let device_id_path = env::var_os(DEVICE_ID_PATH_ENV).map(PathBuf::from);
-        Self::new(&router_url, pairing_token, device_name, device_id_path)
+        Self::new(&router_url, pairing_token, &device_name, device_id_path)
     }
 
     pub fn new(
         router_url: &str,
         pairing_token: String,
-        device_name: String,
+        device_name: &str,
         device_id_path: Option<PathBuf>,
     ) -> Result<Self, LinkError> {
         if pairing_token.trim().is_empty() {
@@ -86,10 +86,8 @@ fn required_env(name: &'static str) -> Result<String, LinkError> {
 fn normalize_router_url(input: &str) -> Result<Url, LinkError> {
     let mut url = Url::parse(input)?;
     let target_scheme = match url.scheme() {
-        "https" => "wss",
-        "http" => "ws",
-        "wss" => "wss",
-        "ws" => "ws",
+        "https" | "wss" => "wss",
+        "http" | "ws" => "ws",
         _ => return Err(LinkError::UnsupportedRouterScheme),
     };
     url.set_scheme(target_scheme)
@@ -110,7 +108,7 @@ mod tests {
         let config = LinkConfig::new(
             "https://router.example.com",
             "secret".to_owned(),
-            "laptop".to_owned(),
+            "laptop",
             None,
         )
         .unwrap();
@@ -126,7 +124,7 @@ mod tests {
         let result = LinkConfig::new(
             "https://router.example.com",
             "   ".to_owned(),
-            "laptop".to_owned(),
+            "laptop",
             None,
         );
         let Err(error) = result else {
@@ -146,7 +144,7 @@ mod tests {
         let config = LinkConfig::new(
             "ws://127.0.0.1:3000/api/link",
             "secret".to_owned(),
-            "laptop".to_owned(),
+            "laptop",
             None,
         )
         .unwrap();

@@ -1,0 +1,29 @@
+{
+  "name": "latch-router",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc",
+    "test": "npm run build && node --test dist/test/*.test.js",
+    "token": "node scripts/generate-token.mjs"
+  },
+  "dependencies": {
+    "@redis/client": "6.2.1",
+    "ws": "8.21.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.9.1",
+    "@types/node": "22.20.2",
+    "@types/ws": "8.18.1",
+    "eslint": "10.9.1",
+    "globals": "17.12.0",
+    "typescript": "5.9.2",
+    "typescript-eslint": "8.70.0"
+  }
+}

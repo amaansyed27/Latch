@@ -1,11 +1,8 @@
 use std::io::{self, BufRead, BufWriter, Write};
 
-use latch_protocol::{
-    ErrorCode, ProtocolError, RequestEnvelope, ResponseEnvelope, PROTOCOL_VERSION,
-};
-use tracing::{error, warn};
-
-use crate::engine::Engine;
+use latch_engine::Engine;
+use latch_protocol::{ErrorCode, ProtocolError, RequestEnvelope, ResponseEnvelope};
+use tracing::warn;
 
 pub fn run(engine: &mut Engine) -> io::Result<()> {
     let stdin = io::stdin();
@@ -41,27 +38,5 @@ fn handle_line(engine: &mut Engine, line: &str) -> ResponseEnvelope {
         }
     };
 
-    if request.version != PROTOCOL_VERSION {
-        return ResponseEnvelope::error(
-            Some(request.id),
-            ProtocolError {
-                code: ErrorCode::UnsupportedVersion,
-                message: format!(
-                    "protocol version {} is unsupported; expected {PROTOCOL_VERSION}",
-                    request.version
-                ),
-            },
-        );
-    }
-
-    let id = request.id;
-    match engine.handle(request.request) {
-        Ok(result) => ResponseEnvelope::success(id, result),
-        Err(protocol_error) => {
-            if protocol_error.code == ErrorCode::Io {
-                error!(code = ?protocol_error.code, "serious internal operation error");
-            }
-            ResponseEnvelope::error(Some(id), protocol_error)
-        }
-    }
+    engine.handle_envelope(request)
 }

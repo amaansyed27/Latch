@@ -6,7 +6,10 @@ use tracing::{info, instrument};
 use crate::{CommandSpec, ExecError, ExecutionResult};
 
 #[instrument(skip(workspace, spec), fields(workspace_id = %workspace.id(), program = %spec.program))]
-pub fn run_blocking(workspace: &Workspace, spec: &CommandSpec) -> Result<ExecutionResult, ExecError> {
+pub fn run_blocking(
+    workspace: &Workspace,
+    spec: &CommandSpec,
+) -> Result<ExecutionResult, ExecError> {
     info!("command started");
     let started = Instant::now();
     let output = Command::new(&spec.program)

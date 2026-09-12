@@ -60,7 +60,10 @@ fn starts_queries_outputs_and_terminates_managed_process() {
     let command = shell("echo ready; sleep 30");
 
     let process_id = manager.start(&workspace, &command).unwrap();
-    assert!(matches!(manager.status(process_id).unwrap().state, ProcessState::Running));
+    assert!(matches!(
+        manager.status(process_id).unwrap().state,
+        ProcessState::Running
+    ));
 
     let mut saw_output = false;
     for _ in 0..20 {

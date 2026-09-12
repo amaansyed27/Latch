@@ -10,9 +10,17 @@ pub enum ExecError {
     #[error("process was not found: {process_id}")]
     ProcessNotFound { process_id: ProcessId },
     #[error("failed to start or control process: {message}")]
-    ProcessFailed { message: String, #[source] source: io::Error },
+    ProcessFailed {
+        message: String,
+        #[source]
+        source: io::Error,
+    },
     #[error("command execution failed: {message}")]
-    Io { message: String, #[source] source: io::Error },
+    Io {
+        message: String,
+        #[source]
+        source: io::Error,
+    },
 }
 
 impl ExecError {

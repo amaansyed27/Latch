@@ -36,9 +36,8 @@ pub struct WorkspaceFs {
 
 impl WorkspaceFs {
     pub fn new(workspace: Workspace) -> Result<Self, FsError> {
-        let dir = Dir::open_ambient_dir(workspace.root(), ambient_authority()).map_err(|source| {
-            FsError::from_io(workspace.root().to_path_buf(), source)
-        })?;
+        let dir = Dir::open_ambient_dir(workspace.root(), ambient_authority())
+            .map_err(|source| FsError::from_io(workspace.root().to_path_buf(), source))?;
         Ok(Self { workspace, dir })
     }
 

@@ -1,6 +1,5 @@
 use std::{
-    fs,
-    io,
+    fs, io,
     path::{Path, PathBuf},
 };
 
@@ -17,7 +16,8 @@ pub struct Workspace {
 impl Workspace {
     pub fn open(path: impl AsRef<Path>) -> Result<Self, WorkspaceError> {
         let requested = path.as_ref();
-        let root = fs::canonicalize(requested).map_err(|source| map_open_error(requested, source))?;
+        let root =
+            fs::canonicalize(requested).map_err(|source| map_open_error(requested, source))?;
         let metadata = fs::metadata(&root).map_err(|source| map_open_error(requested, source))?;
 
         if !metadata.is_dir() {
@@ -54,9 +54,17 @@ pub enum WorkspaceError {
     #[error("workspace path is not a directory: {path}")]
     NotDirectory { path: PathBuf },
     #[error("permission denied while opening workspace: {path}")]
-    PermissionDenied { path: PathBuf, #[source] source: io::Error },
+    PermissionDenied {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
     #[error("failed to open workspace {path}: {source}")]
-    Io { path: PathBuf, #[source] source: io::Error },
+    Io {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
 }
 
 fn map_open_error(path: &Path, source: io::Error) -> WorkspaceError {

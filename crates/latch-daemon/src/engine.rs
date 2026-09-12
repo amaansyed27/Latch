@@ -36,7 +36,9 @@ impl Engine {
             Request::FsRead(request) => {
                 let context = self.workspace(request.workspace_id)?;
                 let contents = context.fs.read_text(request.path).map_err(map_fs_error)?;
-                Ok(ResponsePayload::FileContent(FileContentResponse { contents }))
+                Ok(ResponsePayload::FileContent(FileContentResponse {
+                    contents,
+                }))
             }
             Request::FsWrite(request) => {
                 let context = self.workspace(request.workspace_id)?;
@@ -129,7 +131,10 @@ impl Engine {
         }
     }
 
-    fn register_workspace(&mut self, workspace: Workspace) -> Result<ResponsePayload, ProtocolError> {
+    fn register_workspace(
+        &mut self,
+        workspace: Workspace,
+    ) -> Result<ResponsePayload, ProtocolError> {
         let root = workspace.root().to_string_lossy().into_owned();
         let workspace_id = workspace.id();
         let fs = WorkspaceFs::new(workspace.clone()).map_err(map_fs_error)?;
@@ -144,10 +149,12 @@ impl Engine {
     }
 
     fn workspace(&self, workspace_id: WorkspaceId) -> Result<&WorkspaceContext, ProtocolError> {
-        self.workspaces.get(&workspace_id).ok_or_else(|| ProtocolError {
-            code: ErrorCode::WorkspaceNotFound,
-            message: format!("workspace {workspace_id} is not open"),
-        })
+        self.workspaces
+            .get(&workspace_id)
+            .ok_or_else(|| ProtocolError {
+                code: ErrorCode::WorkspaceNotFound,
+                message: format!("workspace {workspace_id} is not open"),
+            })
     }
 }
 

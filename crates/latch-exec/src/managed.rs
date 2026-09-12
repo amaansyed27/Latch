@@ -35,14 +35,20 @@ impl ProcessManager {
             .spawn()
             .map_err(|source| ExecError::spawn(&spec.program, source))?;
 
-        let stdout = child.stdout.take().ok_or_else(|| ExecError::ProcessFailed {
-            message: "stdout pipe was not available".to_owned(),
-            source: std::io::Error::other("stdout pipe missing after spawn"),
-        })?;
-        let stderr = child.stderr.take().ok_or_else(|| ExecError::ProcessFailed {
-            message: "stderr pipe was not available".to_owned(),
-            source: std::io::Error::other("stderr pipe missing after spawn"),
-        })?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| ExecError::ProcessFailed {
+                message: "stdout pipe was not available".to_owned(),
+                source: std::io::Error::other("stdout pipe missing after spawn"),
+            })?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| ExecError::ProcessFailed {
+                message: "stderr pipe was not available".to_owned(),
+                source: std::io::Error::other("stderr pipe missing after spawn"),
+            })?;
 
         let stdout_buffer = Arc::new(Mutex::new(OutputBuffer::default()));
         let stderr_buffer = Arc::new(Mutex::new(OutputBuffer::default()));
@@ -100,14 +106,20 @@ impl ProcessManager {
 
         process.refresh(process_id)?;
         if process.finished.is_none() {
-            process.child.kill().map_err(|source| ExecError::ProcessFailed {
-                message: format!("could not terminate process {process_id}"),
-                source,
-            })?;
-            let status = process.child.wait().map_err(|source| ExecError::ProcessFailed {
-                message: format!("could not wait for process {process_id} after termination"),
-                source,
-            })?;
+            process
+                .child
+                .kill()
+                .map_err(|source| ExecError::ProcessFailed {
+                    message: format!("could not terminate process {process_id}"),
+                    source,
+                })?;
+            let status = process
+                .child
+                .wait()
+                .map_err(|source| ExecError::ProcessFailed {
+                    message: format!("could not wait for process {process_id} after termination"),
+                    source,
+                })?;
             process.finished = Some(FinishedProcess {
                 status,
                 elapsed: process.started.elapsed(),
@@ -134,10 +146,13 @@ impl ManagedProcess {
             return Ok(());
         }
 
-        let status = self.child.try_wait().map_err(|source| ExecError::ProcessFailed {
-            message: format!("could not query process {process_id}"),
-            source,
-        })?;
+        let status = self
+            .child
+            .try_wait()
+            .map_err(|source| ExecError::ProcessFailed {
+                message: format!("could not query process {process_id}"),
+                source,
+            })?;
 
         if let Some(status) = status {
             self.finished = Some(FinishedProcess {
@@ -233,5 +248,7 @@ fn read_stream(mut stream: impl Read, buffer: Arc<Mutex<OutputBuffer>>) {
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    mutex
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }

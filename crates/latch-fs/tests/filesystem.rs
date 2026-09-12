@@ -24,10 +24,17 @@ fn creates_overwrites_lists_and_deletes() {
     let (_temp, workspace_fs) = fixture();
 
     workspace_fs.create_dir("nested/deeper").unwrap();
-    workspace_fs.write_text("nested/deeper/file.txt", "one").unwrap();
-    workspace_fs.write_text("nested/deeper/file.txt", "two").unwrap();
+    workspace_fs
+        .write_text("nested/deeper/file.txt", "one")
+        .unwrap();
+    workspace_fs
+        .write_text("nested/deeper/file.txt", "two")
+        .unwrap();
 
-    assert_eq!(workspace_fs.read_text("nested/deeper/file.txt").unwrap(), "two");
+    assert_eq!(
+        workspace_fs.read_text("nested/deeper/file.txt").unwrap(),
+        "two"
+    );
     let entries = workspace_fs.list_dir("nested/deeper").unwrap();
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].name, "file.txt");
@@ -48,7 +55,11 @@ fn rejects_parent_escape() {
 #[test]
 fn rejects_absolute_path() {
     let (temp, workspace_fs) = fixture();
-    let outside = temp.path().parent().unwrap_or_else(|| Path::new("/")).join("outside.txt");
+    let outside = temp
+        .path()
+        .parent()
+        .unwrap_or_else(|| Path::new("/"))
+        .join("outside.txt");
     let error = workspace_fs.read_text(&outside).unwrap_err();
     assert!(matches!(error, FsError::PathOutsideWorkspace { .. }));
 }

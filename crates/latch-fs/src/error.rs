@@ -9,11 +9,19 @@ pub enum FsError {
     #[error("file or directory was not found: {path}")]
     FileNotFound { path: PathBuf },
     #[error("permission denied for path: {path}")]
-    PermissionDenied { path: PathBuf, #[source] source: io::Error },
+    PermissionDenied {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
     #[error("invalid workspace-relative path: {path}")]
     InvalidPath { path: PathBuf },
     #[error("filesystem operation failed for {path}: {source}")]
-    Io { path: PathBuf, #[source] source: io::Error },
+    Io {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
 }
 
 impl FsError {

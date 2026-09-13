@@ -14,12 +14,15 @@ import type {
   RouterMessage,
 } from './types.js';
 import { parseDeviceMessage } from './validation.js';
+import type { AuthorizationStore } from './authorization-store.js';
+import { allowRequest } from './rate-limit.js';
 
 interface DeviceSession {
   ws: WebSocket;
   presence: DevicePresence;
   alive: boolean;
   heartbeat: NodeJS.Timeout;
+  deviceCredential?: string;
 }
 
 interface PendingDeviceRequest {
@@ -39,6 +42,7 @@ export class LinkServer {
     private readonly config: RouterConfig,
     private readonly coordinator: RelayCoordinator,
     private readonly instanceId: string = randomUUID(),
+    private readonly authorizationStore?: AuthorizationStore,
   ) {
     this.#wss.on('connection', (ws) => this.#accept(ws));
   }
@@ -96,6 +100,10 @@ export class LinkServer {
   }
 
   #upgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
+    if (!allowRequest(request, 'device-link', 60)) {
+      socket.end('HTTP/1.1 429 Too Many Requests\r\nConnection: close\r\n\r\n');
+      return;
+    }
     this.#wss.handleUpgrade(request, socket, head, (ws) => {
       this.#wss.emit('connection', ws, request);
     });
@@ -132,7 +140,11 @@ export class LinkServer {
         ws.close(1008, 'invalid authentication');
         return;
       }
-      if (!safeTokenEqual(message.pairing_token, this.config.pairingToken)) {
+      const owned = message.device_credential && this.authorizationStore
+        ? await this.authorizationStore.authenticateDevice(message.device_id, message.device_credential)
+        : null;
+      const legacy = this.config.allowLegacyAppToken && message.pairing_token !== undefined && safeTokenEqual(message.pairing_token, this.config.pairingToken);
+      if (!owned && !legacy) {
         sendError(ws, 'unauthorized', 'device authentication failed');
         ws.close(1008, 'unauthorized');
         return;
@@ -146,6 +158,7 @@ export class LinkServer {
         connected_at: new Date().toISOString(),
         instance_id: this.instanceId,
         connection_id: connectionId,
+        owner_user_id: owned?.ownerUserId,
       };
 
       const previous = this.#sessions.get(presence.device_id);
@@ -160,6 +173,7 @@ export class LinkServer {
         heartbeat: setInterval(() => {
           void this.#heartbeat(presence.device_id, connectionId);
         }, this.config.heartbeatMs),
+        deviceCredential: owned ? message.device_credential : undefined,
       };
       this.#sessions.set(presence.device_id, session);
       await this.coordinator.registerDevice(
@@ -218,6 +232,10 @@ export class LinkServer {
     session.alive = false;
     session.ws.ping();
     try {
+      if (session.deviceCredential && this.authorizationStore && !(await this.authorizationStore.authenticateDevice(deviceId, session.deviceCredential))) {
+        session.ws.close(1008, 'device revoked');
+        return;
+      }
       await this.coordinator.refreshDevice(
         deviceId,
         this.instanceId,

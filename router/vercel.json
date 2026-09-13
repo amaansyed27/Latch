@@ -10,6 +10,22 @@
   },
   "rewrites": [
     {
+      "source": "/",
+      "destination": "/api/router?latch_public_path=/"
+    },
+    {
+      "source": "/:page(login|devices|privacy|terms|support|security)",
+      "destination": "/api/router?latch_public_path=/:page"
+    },
+    {
+      "source": "/.well-known/:path*",
+      "destination": "/api/router?latch_public_path=/.well-known/:path*"
+    },
+    {
+      "source": "/oauth/:path*",
+      "destination": "/api/router?latch_public_path=/oauth/:path*"
+    },
+    {
       "source": "/mcp",
       "destination": "/api/router?latch_mcp=1"
     },

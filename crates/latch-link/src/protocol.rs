@@ -8,7 +8,10 @@ pub enum ClientMessage {
     Hello {
         device_id: DeviceId,
         device_name: String,
-        pairing_token: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pairing_token: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        device_credential: Option<String>,
     },
     Response {
         request_id: String,
@@ -45,7 +48,8 @@ mod tests {
         let message = ClientMessage::Hello {
             device_id,
             device_name: "amaan-laptop".to_owned(),
-            pairing_token: "test-secret".to_owned(),
+            pairing_token: Some("test-secret".to_owned()),
+            device_credential: None,
         };
 
         let value = serde_json::to_value(message).unwrap();

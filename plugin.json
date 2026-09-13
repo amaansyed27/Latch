@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "latch",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Use your own computer from ChatGPT and Codex.",
   "author": { "name": "Amaan Syed" },
   "homepage": "https://github.com/amaansyed27/Latch",

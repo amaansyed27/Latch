@@ -7,6 +7,7 @@ export interface DevicePresence {
   connected_at: string;
   instance_id: string;
   connection_id: string;
+  owner_user_id?: string;
 }
 
 export interface PublicDevice {
@@ -42,7 +43,8 @@ export interface HelloMessage {
   type: 'hello';
   device_id: string;
   device_name: string;
-  pairing_token: string;
+  pairing_token?: string;
+  device_credential?: string;
 }
 
 export interface DeviceResponseMessage {

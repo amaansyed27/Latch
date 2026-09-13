@@ -6,3 +6,4 @@
 /router/.env*
 !/router/.env.example
 .vercel
+.env*

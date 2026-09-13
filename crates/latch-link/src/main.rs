@@ -9,6 +9,13 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     init_logging()?;
 
     let config = LinkConfig::from_env()?;
+    if let [_, command, code] = std::env::args().collect::<Vec<_>>().as_slice() {
+        if command == "pair" {
+            let identity = LinkClient::pair(&config, code).await?;
+            info!(device_id = %identity.device_id, device_name = %identity.device_name, "device paired; credential stored in the OS credential manager");
+            return Ok(());
+        }
+    }
     let mut client = LinkClient::new(config)?;
     info!(
         device_id = %client.identity().device_id,

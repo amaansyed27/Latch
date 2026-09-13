@@ -7,6 +7,8 @@ description: Use Latch to list the user's connected computers, open a workspace,
 
 Use only the explicit Latch tools. Never guess a device ID, workspace ID, or path.
 
+If Latch requests authentication, complete its OAuth connection. Users pair and revoke physical devices separately; reconnecting the plugin must never require re-pairing a device.
+
 1. Call `latch_devices_list` and resolve the user's intended computer. If multiple devices make the target ambiguous, ask which one.
 2. Call `latch_workspace_open` with that device and the absolute local directory. Workspace IDs expire when Latch Link reconnects; reopen after `workspace_not_found`.
 3. Use `latch_file_read` only with paths relative to the opened workspace.

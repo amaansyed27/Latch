@@ -1,9 +1,11 @@
 use std::{
+    path::Path,
     sync::{Arc, Mutex, MutexGuard, PoisonError},
     time::Duration,
 };
 
 use futures_util::{SinkExt, StreamExt};
+use latch_core::DeviceId;
 use latch_engine::Engine;
 use latch_protocol::RequestEnvelope;
 use tokio::{
@@ -15,8 +17,9 @@ use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tracing::{info, warn};
 
 use crate::{
-    default_device_id_path, load_or_create_device_id, ClientMessage, DeviceIdentity, LinkConfig,
-    LinkError, ReconnectBackoff, ServerMessage,
+    default_device_id_path, load_device_credential, load_or_create_device_id,
+    store_device_credential, ClientMessage, DeviceIdentity, LinkConfig, LinkError,
+    ReconnectBackoff, ServerMessage,
 };
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
@@ -28,6 +31,7 @@ pub struct LinkClient {
     identity: DeviceIdentity,
     engine: SharedEngine,
     backoff: ReconnectBackoff,
+    device_credential: Option<String>,
 }
 
 impl LinkClient {
@@ -41,12 +45,21 @@ impl LinkClient {
             device_id,
             device_name: config.device_name().to_owned(),
         };
+        let device_credential = match load_device_credential(device_id) {
+            Ok(value) => value,
+            Err(_) if config.pairing_token().is_some() => None,
+            Err(error) => return Err(error),
+        };
+        if device_credential.is_none() && config.pairing_token().is_none() {
+            return Err(LinkError::DeviceNotPaired);
+        }
 
         Ok(Self {
             config,
             identity,
             engine: Arc::new(Mutex::new(Engine::new())),
             backoff: ReconnectBackoff::default(),
+            device_credential,
         })
     }
 
@@ -74,13 +87,50 @@ impl LinkClient {
         lock_engine(&self.engine).shutdown();
     }
 
+    pub async fn pair(config: &LinkConfig, code: &str) -> Result<DeviceIdentity, LinkError> {
+        #[derive(serde::Serialize)]
+        struct PairRequest<'a> {
+            code: &'a str,
+            device_id: DeviceId,
+            device_name: &'a str,
+        }
+        #[derive(serde::Deserialize)]
+        struct PairResponse {
+            device_credential: String,
+        }
+
+        let identity_path = config
+            .device_id_path()
+            .map_or(default_device_id_path()?, Path::to_path_buf);
+        let device_id = load_or_create_device_id(&identity_path)?;
+        let response = reqwest::Client::new()
+            .post(config.pairing_url()?)
+            .json(&PairRequest {
+                code,
+                device_id,
+                device_name: config.device_name(),
+            })
+            .send()
+            .await?;
+        if !response.status().is_success() {
+            return Err(LinkError::PairingRejected);
+        }
+        let paired: PairResponse = response.json().await?;
+        store_device_credential(device_id, &paired.device_credential)?;
+        Ok(DeviceIdentity {
+            device_id,
+            device_name: config.device_name().to_owned(),
+        })
+    }
+
     async fn run_session(&mut self) -> Result<(), LinkError> {
         let (mut socket, _) = connect_async(self.config.router_url().as_str()).await?;
 
         let hello = ClientMessage::Hello {
             device_id: self.identity.device_id,
             device_name: self.identity.device_name.clone(),
-            pairing_token: self.config.pairing_token().to_owned(),
+            pairing_token: self.config.pairing_token().map(ToOwned::to_owned),
+            device_credential: self.device_credential.clone(),
         };
         socket
             .send(Message::Text(serde_json::to_string(&hello)?.into()))

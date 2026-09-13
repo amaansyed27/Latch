@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -60,5 +60,9 @@ try {
   process.stdout.write(`${JSON.stringify({ health: 'ok', device_id: deviceId, local_node: directNode, routed_node: routedNode, file_read: 'passed' })}\n`);
 } finally {
   await client.close();
-  await rm(workspace, { recursive: true, force: true });
+  await unlink(join(workspace, 'proof.txt')).catch(() => undefined);
+  await rm(workspace, { recursive: true, force: true }).catch((error) => {
+    if (process.platform !== 'win32' || error?.code !== 'EBUSY') throw error;
+    process.stderr.write('Empty acceptance workspace remains locked until Latch Link exits.\n');
+  });
 }

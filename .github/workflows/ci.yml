@@ -65,3 +65,4 @@ jobs:
       - run: npm install --prefix router
       - run: npm run build --prefix router
       - run: node router/scripts/e2e-local.mjs
+      - run: npm run e2e:mcp --prefix router

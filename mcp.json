@@ -1,0 +1,9 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "latch": {
+      "type": "streamable-http",
+      "url": "https://latch-router.vercel.app/mcp"
+    }
+  }
+}

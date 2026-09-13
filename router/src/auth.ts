@@ -23,3 +23,11 @@ export function isControlAuthorized(
   const provided = bearerToken(headers);
   return provided !== null && safeTokenEqual(provided, expectedToken);
 }
+
+export function isAppAuthorized(
+  headers: IncomingHttpHeaders,
+  expectedToken: string,
+): boolean {
+  const provided = bearerToken(headers);
+  return provided !== null && safeTokenEqual(provided, expectedToken);
+}

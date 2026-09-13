@@ -1,0 +1,19 @@
+{
+  "name": "latch",
+  "interface": { "displayName": "Latch" },
+  "plugins": [
+    {
+      "name": "latch",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/amaansyed27/Latch.git",
+        "ref": "main"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

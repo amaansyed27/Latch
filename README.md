@@ -2,15 +2,14 @@
 
 **Latch for ChatGPT — Your local machine, inside ChatGPT.**
 
-Latch is a secure bridge foundation for letting a remote control plane invoke typed operations on a user's own machine. V0.2 adds the **Remote Router Proof**: the existing V0.1 local engine remains the execution environment, while a Vercel Router relays authenticated requests to an outbound-only local connection.
+Latch is a secure bridge for letting ChatGPT, Codex, or another MCP client invoke typed operations on a user's own machine. V0.3 adds a production Streamable HTTP MCP endpoint and portable Agent Plugin package on top of the existing V0.2 Router.
 
-The ChatGPT Plugin/App is **not** part of V0.2.
-
-## V0.2 architecture
+## V0.3 architecture
 
 ```text
-future ChatGPT Plugin
+ChatGPT / Codex / MCP client
         |
+        | HTTPS Streamable HTTP
         v
    Latch Router (Vercel)
         |
@@ -38,6 +37,7 @@ The deployed Router uses Vercel WebSockets plus Redis for ephemeral presence and
 - stdin/stdout local daemon
 - outbound-only Router connection with persisted `DeviceId`
 - automatic reconnect with bounded exponential backoff
+- four explicit MCP tools for devices, workspace open, file read, and command execution
 
 Command execution is **not** an OS sandbox. Commands start in their Latch workspace but inherit the permissions of the user running Latch.
 
@@ -67,6 +67,7 @@ The cross-language local relay proof is run in CI after building both sides:
 
 ```bash
 node router/scripts/e2e-local.mjs
+npm --prefix router run e2e:mcp
 ```
 
 ## Start Latch Link
@@ -82,4 +83,4 @@ cargo run -p latch-link
 
 The generated `DeviceId` is persisted outside project workspaces. On Windows the default is `%LOCALAPPDATA%\Latch\device.json`.
 
-See [`docs/router.md`](docs/router.md) for Router setup, deployment, pairing, APIs, and the manual `node --version` acceptance test. See [`docs/architecture.md`](docs/architecture.md) for local security boundaries and dependency direction.
+See [`docs/chatgpt-v0.3.md`](docs/chatgpt-v0.3.md) for the MCP tools, app authentication, package, current ChatGPT availability, and production acceptance. See [`docs/router.md`](docs/router.md) for Router setup and [`docs/architecture.md`](docs/architecture.md) for local security boundaries.

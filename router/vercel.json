@@ -10,6 +10,10 @@
   },
   "rewrites": [
     {
+      "source": "/mcp",
+      "destination": "/api/router?latch_mcp=1"
+    },
+    {
       "source": "/api/:path*",
       "destination": "/api/router?latch_path=:path*"
     }

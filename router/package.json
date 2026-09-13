@@ -1,6 +1,6 @@
 {
   "name": "latch-router",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "engines": {
@@ -11,11 +11,15 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "test": "npm run build && node --test dist/test/*.test.js",
+    "e2e:mcp": "npm run build && node scripts/e2e-mcp-local.mjs",
+    "accept:mcp": "npm run build && node scripts/accept-mcp.mjs",
     "token": "node scripts/generate-token.mjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@redis/client": "6.2.1",
-    "ws": "8.21.3"
+    "ws": "8.21.3",
+    "zod": "^4.6.4"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

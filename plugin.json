@@ -1,0 +1,17 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "latch",
+  "version": "0.3.0",
+  "description": "Use your own computer from ChatGPT and Codex.",
+  "author": { "name": "Amaan Syed" },
+  "homepage": "https://github.com/amaansyed27/Latch",
+  "repository": "https://github.com/amaansyed27/Latch",
+  "license": "MIT",
+  "keywords": ["mcp", "chatgpt", "codex", "local-computer"],
+  "extensions": {
+    "com.openai": {
+      "displayName": "Latch",
+      "shortDescription": "Use your own computer from ChatGPT."
+    }
+  }
+}

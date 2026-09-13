@@ -2,9 +2,9 @@
 
 **Latch for ChatGPT — Your local machine, inside ChatGPT.**
 
-Latch is a secure bridge for letting ChatGPT, Codex, or another MCP client invoke typed operations on a user's own machine. V0.3 adds a production Streamable HTTP MCP endpoint and portable Agent Plugin package on top of the existing V0.2 Router.
+Latch is a secure bridge for letting ChatGPT, Codex, or another MCP client invoke typed operations on a user's own machine. V0.4 adds OAuth 2.1, durable user-owned devices, one-time pairing, and revocable per-device credentials.
 
-## V0.3 architecture
+## V0.4 architecture
 
 ```text
 ChatGPT / Codex / MCP client
@@ -72,15 +72,15 @@ npm --prefix router run e2e:mcp
 
 ## Start Latch Link
 
-Configure the deployed Router URL, its pairing token, and a human-readable device name. On Windows PowerShell:
+Create a pairing code from the authenticated `/devices` page, then on Windows PowerShell:
 
 ```powershell
 $env:LATCH_ROUTER_URL="https://<your-latch-router>.vercel.app"
-$env:LATCH_PAIRING_TOKEN="<pairing-token>"
 $env:LATCH_DEVICE_NAME=$env:COMPUTERNAME
+cargo run -p latch-link -- pair <code>
 cargo run -p latch-link
 ```
 
 The generated `DeviceId` is persisted outside project workspaces. On Windows the default is `%LOCALAPPDATA%\Latch\device.json`.
 
-See [`docs/chatgpt-v0.3.md`](docs/chatgpt-v0.3.md) for the MCP tools, app authentication, package, current ChatGPT availability, and production acceptance. See [`docs/router.md`](docs/router.md) for Router setup and [`docs/architecture.md`](docs/architecture.md) for local security boundaries.
+See [`docs/public-auth-v0.4.md`](docs/public-auth-v0.4.md) for OAuth, device enrollment, persistence, security, and submission material. See [`docs/router.md`](docs/router.md) for Router setup and [`docs/architecture.md`](docs/architecture.md) for local security boundaries.

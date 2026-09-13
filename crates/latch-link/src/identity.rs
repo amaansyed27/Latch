@@ -55,6 +55,22 @@ pub fn load_or_create_device_id(path: &Path) -> Result<DeviceId, LinkError> {
     }
 }
 
+pub fn load_device_credential(device_id: DeviceId) -> Result<Option<String>, LinkError> {
+    let entry = keyring::Entry::new("Latch", &device_id.to_string())
+        .map_err(|_| LinkError::CredentialStore)?;
+    match entry.get_password() {
+        Ok(value) => Ok(Some(value)),
+        Err(keyring::Error::NoEntry) => Ok(None),
+        Err(_) => Err(LinkError::CredentialStore),
+    }
+}
+
+pub fn store_device_credential(device_id: DeviceId, credential: &str) -> Result<(), LinkError> {
+    keyring::Entry::new("Latch", &device_id.to_string())
+        .and_then(|entry| entry.set_password(credential))
+        .map_err(|_| LinkError::CredentialStore)
+}
+
 fn write_new_identity(path: &Path, file: File) -> Result<DeviceId, LinkError> {
     let device_id = DeviceId::new();
     let stored = StoredIdentity {

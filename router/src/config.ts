@@ -5,6 +5,10 @@ export interface RouterConfig {
   requestTimeoutMs: number;
   presenceTtlSeconds: number;
   heartbeatMs: number;
+  publicBaseUrl: string;
+  databaseUrl?: string;
+  neonAuthBaseUrl?: string;
+  allowLegacyAppToken: boolean;
 }
 
 export interface ProductionConfig extends RouterConfig {
@@ -44,6 +48,10 @@ export function loadProductionConfig(
       requestTimeoutMs: parseTimeout(environment.LATCH_REQUEST_TIMEOUT_MS),
       presenceTtlSeconds: 90,
       heartbeatMs: 20_000,
+      publicBaseUrl: publicUrl(environment),
+      databaseUrl: environment.DATABASE_URL?.trim(),
+      neonAuthBaseUrl: usableUrl(environment.NEON_AUTH_BASE_URL),
+      allowLegacyAppToken: environment.LATCH_ALLOW_LEGACY_APP_TOKEN === 'true',
     },
   };
 }
@@ -56,8 +64,21 @@ export function testConfig(overrides: Partial<RouterConfig> = {}): RouterConfig 
     requestTimeoutMs: 500,
     presenceTtlSeconds: 90,
     heartbeatMs: 20_000,
+    publicBaseUrl: 'http://127.0.0.1:3000',
+    allowLegacyAppToken: true,
     ...overrides,
   };
+}
+
+function usableUrl(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed?.startsWith('https://') ? trimmed : undefined;
+}
+
+function publicUrl(environment: NodeJS.ProcessEnv): string {
+  if (environment.LATCH_PUBLIC_URL?.trim()) return environment.LATCH_PUBLIC_URL.trim().replace(/\/$/, '');
+  if (environment.VERCEL_ENV === 'preview' && environment.VERCEL_URL) return `https://${environment.VERCEL_URL}`;
+  return 'https://latch-router.vercel.app';
 }
 
 function parseTimeout(raw: string | undefined): number {

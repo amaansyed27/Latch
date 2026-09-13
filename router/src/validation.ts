@@ -30,7 +30,7 @@ export function parseDeviceMessage(raw: string): DeviceMessage | null {
       typeof value.device_name !== 'string' ||
       value.device_name.trim().length === 0 ||
       value.device_name.length > 128 ||
-      typeof value.pairing_token !== 'string'
+      (typeof value.pairing_token !== 'string' && typeof value.device_credential !== 'string')
     ) {
       return null;
     }

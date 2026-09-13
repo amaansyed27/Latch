@@ -7,6 +7,11 @@ import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/
 import { testConfig } from '../src/config.js';
 import { MemoryCoordinator } from '../src/memory-coordinator.js';
 import { createRouterRuntime } from '../src/runtime.js';
+
+function toolError(result: unknown): { code: string; message: string } {
+  const content = (result as { content: unknown }).content as { type: string; text: string }[];
+  return (JSON.parse(content[0]!.text) as { error: { code: string; message: string } }).error;
+}
 import type { DispatchMessage, RelayCompletion } from '../src/types.js';
 
 const DEVICE_ID = '00000000-0000-4000-8000-000000000001';
@@ -141,7 +146,7 @@ void test('MCP returns structured offline, timeout, stale-workspace, and input e
       name: 'latch_workspace_open',
       arguments: { device_id: DEVICE_ID, path: 'C:\\safe' },
     });
-    assert.equal((offline.structuredContent as { error: { code: string } }).error.code, 'device_not_found');
+    assert.equal(toolError(offline).code, 'device_not_found');
 
     await registerDevice(router.coordinator, async (message) => {
       if (message.request.method === 'fs.read') {
@@ -161,12 +166,12 @@ void test('MCP returns structured offline, timeout, stale-workspace, and input e
       name: 'latch_file_read',
       arguments: { device_id: DEVICE_ID, workspace_id: WORKSPACE_ID, relative_path: 'note.txt' },
     });
-    assert.equal((stale.structuredContent as { error: { message: string } }).error.message, 'Workspace is no longer open. Call latch_workspace_open again.');
+    assert.equal(toolError(stale).message, 'Workspace is no longer open. Call latch_workspace_open again.');
     const timedOut = await client.callTool({
       name: 'latch_exec_run',
       arguments: { device_id: DEVICE_ID, workspace_id: WORKSPACE_ID, program: 'node', args: [] },
     });
-    assert.equal((timedOut.structuredContent as { error: { code: string } }).error.code, 'request_timeout');
+    assert.equal(toolError(timedOut).code, 'request_timeout');
     const invalid = await client.callTool({
       name: 'latch_file_read',
       arguments: { device_id: 'invalid' },

@@ -14,7 +14,7 @@ const DEVICE_ID_PATH_ENV: &str = "LATCH_DEVICE_ID_PATH";
 
 pub struct LinkConfig {
     router_url: Url,
-    pairing_token: String,
+    pairing_token: Option<String>,
     device_name: String,
     device_id_path: Option<PathBuf>,
 }
@@ -22,7 +22,9 @@ pub struct LinkConfig {
 impl LinkConfig {
     pub fn from_env() -> Result<Self, LinkError> {
         let router_url = required_env(ROUTER_URL_ENV)?;
-        let pairing_token = required_env(PAIRING_TOKEN_ENV)?;
+        let pairing_token = env::var(PAIRING_TOKEN_ENV)
+            .ok()
+            .filter(|value| !value.trim().is_empty());
         let device_name = required_env(DEVICE_NAME_ENV)?;
         let device_id_path = env::var_os(DEVICE_ID_PATH_ENV).map(PathBuf::from);
         Self::new(&router_url, pairing_token, &device_name, device_id_path)
@@ -30,16 +32,10 @@ impl LinkConfig {
 
     pub fn new(
         router_url: &str,
-        pairing_token: String,
+        pairing_token: Option<String>,
         device_name: &str,
         device_id_path: Option<PathBuf>,
     ) -> Result<Self, LinkError> {
-        if pairing_token.trim().is_empty() {
-            return Err(LinkError::EmptyEnvironment {
-                name: PAIRING_TOKEN_ENV,
-            });
-        }
-
         let device_name = device_name.trim().to_owned();
         if device_name.is_empty() {
             return Err(LinkError::EmptyEnvironment {
@@ -62,8 +58,8 @@ impl LinkConfig {
         &self.router_url
     }
 
-    pub fn pairing_token(&self) -> &str {
-        &self.pairing_token
+    pub fn pairing_token(&self) -> Option<&str> {
+        self.pairing_token.as_deref()
     }
 
     pub fn device_name(&self) -> &str {
@@ -72,6 +68,18 @@ impl LinkConfig {
 
     pub fn device_id_path(&self) -> Option<&Path> {
         self.device_id_path.as_deref()
+    }
+
+    pub fn pairing_url(&self) -> Result<Url, LinkError> {
+        let mut url = self.router_url.clone();
+        url.set_scheme(if url.scheme() == "wss" {
+            "https"
+        } else {
+            "http"
+        })
+        .map_err(|()| LinkError::UnsupportedRouterScheme)?;
+        url.set_path("/api/pairing/exchange");
+        Ok(url)
     }
 }
 
@@ -107,7 +115,7 @@ mod tests {
     fn https_router_url_becomes_secure_websocket_url() {
         let config = LinkConfig::new(
             "https://router.example.com",
-            "secret".to_owned(),
+            Some("secret".to_owned()),
             "laptop",
             None,
         )
@@ -120,30 +128,16 @@ mod tests {
     }
 
     #[test]
-    fn empty_pairing_token_is_rejected() {
-        let result = LinkConfig::new(
-            "https://router.example.com",
-            "   ".to_owned(),
-            "laptop",
-            None,
-        );
-        let Err(error) = result else {
-            panic!("empty pairing token was accepted");
-        };
-
-        assert!(matches!(
-            error,
-            LinkError::EmptyEnvironment {
-                name: PAIRING_TOKEN_ENV
-            }
-        ));
+    fn pairing_token_is_optional_for_device_credentials() {
+        let result = LinkConfig::new("https://router.example.com", None, "laptop", None);
+        assert!(result.is_ok());
     }
 
     #[test]
     fn explicit_link_path_is_preserved() {
         let config = LinkConfig::new(
             "ws://127.0.0.1:3000/api/link",
-            "secret".to_owned(),
+            Some("secret".to_owned()),
             "laptop",
             None,
         )

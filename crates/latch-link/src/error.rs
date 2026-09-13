@@ -42,4 +42,12 @@ pub enum LinkError {
     InvalidLinkMessage,
     #[error("failed to serialize a link message: {0}")]
     Serialization(#[from] serde_json::Error),
+    #[error("device is not paired; run `latch-link pair <code>`")]
+    DeviceNotPaired,
+    #[error("secure credential storage failed")]
+    CredentialStore,
+    #[error("device pairing request failed: {0}")]
+    PairingRequest(#[from] reqwest::Error),
+    #[error("the pairing code was rejected")]
+    PairingRejected,
 }

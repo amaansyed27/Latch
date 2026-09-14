@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import test from 'node:test';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -8,6 +9,7 @@ import { LATCH_SCOPES, MemoryAuthorizationStore, pkceChallenge } from '../src/au
 import { testConfig } from '../src/config.js';
 import { MemoryCoordinator } from '../src/memory-coordinator.js';
 import { createRouterRuntime } from '../src/runtime.js';
+import { safeReturnTo } from '../src/web-ui.js';
 
 const DEVICE_A = '00000000-0000-4000-8000-00000000000a';
 const DEVICE_B = '00000000-0000-4000-8000-00000000000b';
@@ -125,11 +127,16 @@ void test('OAuth discovery is public and legacy app tokens are disabled by defau
     const issued = await store.exchangeAuthorizationCode(code, verifier, tokenRequest); assert(issued);
     const refreshResponse = await fetch(`${base}/oauth/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'refresh_token', client_id: tokenRequest.clientId, refresh_token: issued.refreshToken }) });
     assert.equal(refreshResponse.status, 200);
-    for (const path of ['/', '/login', '/devices', '/download', '/security', '/privacy', '/terms', '/support', '/assets/latch.css', '/assets/latch.js']) {
+    for (const path of ['/', '/login', '/signup', '/forgot-password', '/reset-password', '/download', '/security', '/privacy', '/terms', '/support', '/assets/latch.css', '/assets/latch.js']) {
       const page = await fetch(`${base}${path}`);
       assert.equal(page.status, 200, path);
       if (path === '/download') assert.match(await page.text(), /LatchSetup-x64\.msi/);
     }
+    const devices = await fetch(`${base}/devices`, { redirect: 'manual' });
+    assert.equal(devices.status, 302);
+    assert.equal(devices.headers.get('location'), '/login?return_to=%2Fdevices');
+    assert.equal(safeReturnTo('//attacker.example'), '/devices');
+    assert.equal(safeReturnTo('/devices'), '/devices');
   } finally { await runtime.close(); }
 });
 
@@ -144,4 +151,47 @@ void test('distributed rate-limit buckets expire and revocation broadcasts immed
   await coordinator.subscribeRevocations(async (deviceId) => { revoked = deviceId; });
   await coordinator.revokeDevice(DEVICE_A);
   assert.equal(revoked, DEVICE_A);
+});
+
+void test('managed auth proxy preserves session cookies, protects pages, and signs out', async () => {
+  const auth = createServer(async (request, response) => {
+    if (request.url === '/get-session') {
+      if (request.headers.cookie?.includes('session=valid')) response.end(JSON.stringify({ user: { id: 'managed-user', email: 'user@example.test' } }));
+      else { response.statusCode = 401; response.end('{}'); }
+      return;
+    }
+    if (request.url === '/sign-up/email' || request.url === '/sign-in/email') {
+      response.setHeader('set-cookie', 'session=valid; Domain=auth.example; Path=/; HttpOnly; SameSite=Lax');
+      response.end(JSON.stringify({ user: { id: 'managed-user' } })); return;
+    }
+    if (request.url === '/sign-out') {
+      response.setHeader('set-cookie', 'session=; Domain=auth.example; Path=/; HttpOnly; Max-Age=0');
+      response.end('{}'); return;
+    }
+    response.statusCode = 404; response.end('{}');
+  });
+  await new Promise<void>((resolve) => auth.listen(0, '127.0.0.1', resolve));
+  const authAddress = auth.address(); assert(authAddress && typeof authAddress !== 'string');
+  const config = testConfig({ neonAuthBaseUrl: `http://127.0.0.1:${authAddress.port}` });
+  const runtime = createRouterRuntime(config, new MemoryCoordinator(), new MemoryAuthorizationStore());
+  await runtime.ready; await new Promise<void>((resolve) => runtime.server.listen(0, '127.0.0.1', resolve));
+  const address = runtime.server.address(); assert(address && typeof address !== 'string');
+  config.publicBaseUrl = `http://127.0.0.1:${address.port}`;
+  try {
+    const signedOut = await fetch(`${config.publicBaseUrl}/devices`, { redirect: 'manual' });
+    assert.equal(signedOut.status, 302);
+    const signup = await fetch(`${config.publicBaseUrl}/api/auth/sign-up/email`, { method: 'POST', headers: { origin: config.publicBaseUrl, 'content-type': 'application/json' }, body: JSON.stringify({ email: 'user@example.test', password: 'correct horse battery staple' }) });
+    assert.equal(signup.status, 200);
+    const cookie = signup.headers.get('set-cookie') ?? '';
+    assert.match(cookie, /session=valid/);
+    assert.doesNotMatch(cookie, /Domain=/i);
+    const devices = await fetch(`${config.publicBaseUrl}/devices`, { headers: { cookie } });
+    assert.equal(devices.status, 200);
+    assert.match(await devices.text(), /user@example\.test/);
+    const logout = await fetch(`${config.publicBaseUrl}/api/auth/sign-out`, { method: 'POST', headers: { origin: config.publicBaseUrl, cookie, 'content-type': 'application/json' }, body: '{}' });
+    assert.equal(logout.status, 200);
+    assert.match(logout.headers.get('set-cookie') ?? '', /Max-Age=0/);
+  } finally {
+    await runtime.close(); await new Promise<void>((resolve) => auth.close(() => resolve()));
+  }
 });

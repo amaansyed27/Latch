@@ -8,7 +8,7 @@ import type { RouterConfig } from './config.js';
 import type { RelayCoordinator } from './coordinator.js';
 import { allowRequest } from './rate-limit.js';
 import { isUuid } from './validation.js';
-import { escapeHtml, renderAuthorization, renderPage, serveAsset } from './web-ui.js';
+import { escapeHtml, renderAuthorization, renderError, renderPage, safeReturnTo, serveAsset } from './web-ui.js';
 
 const MAX_BODY = 32 * 1024;
 
@@ -16,7 +16,8 @@ export function createOAuthHandler(config: RouterConfig, store: AuthorizationSto
   return (request: IncomingMessage, response: ServerResponse): void => {
     void handleOAuth(request, response, config, store, coordinator).catch((error: unknown) => {
       console.error('authorization request failed', { error_name: error instanceof Error ? error.name : 'unknown' });
-      json(response, 500, { error: 'server_error' });
+      if (request.headers.accept?.includes('text/html')) renderError(response, 500, 'Something went wrong', 'Latch could not complete this request. Please try again.');
+      else json(response, 500, { error: 'server_error' });
     });
   };
 }
@@ -114,11 +115,19 @@ async function handleOAuth(request: IncomingMessage, response: ServerResponse, c
     await proxyNeonAuth(request, response, url, config.neonAuthBaseUrl);
     return;
   }
-  if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/login' || url.pathname === '/devices' || url.pathname === '/download' || url.pathname === '/privacy' || url.pathname === '/terms' || url.pathname === '/support' || url.pathname === '/security')) {
-    page(response, url.pathname, config.neonAuthBaseUrl !== undefined, url.searchParams.get('return_to'));
+  if (request.method === 'GET' && ['/', '/login', '/signup', '/account', '/forgot-password', '/reset-password', '/devices', '/download', '/privacy', '/terms', '/support', '/security'].includes(url.pathname)) {
+    const identity = await neonSession(request.headers, config.neonAuthBaseUrl);
+    if ((url.pathname === '/devices' || url.pathname === '/account') && !identity) {
+      response.statusCode = 302; response.setHeader('location', `/login?return_to=${encodeURIComponent(url.pathname)}`); response.end(); return;
+    }
+    if ((url.pathname === '/login' || url.pathname === '/signup') && identity) {
+      response.statusCode = 302; response.setHeader('location', safeReturnTo(url.searchParams.get('return_to'))); response.end(); return;
+    }
+    page(response, url.pathname, config.neonAuthBaseUrl !== undefined, url.searchParams.get('return_to'), identity);
     return;
   }
-  json(response, 404, { error: 'not_found' });
+  if (request.method === 'GET' && request.headers.accept?.includes('text/html')) renderError(response, 404, 'Page not found', 'The page you requested does not exist.');
+  else json(response, 404, { error: 'not_found' });
 }
 
 async function authorize(request: IncomingMessage, response: ServerResponse, url: URL, config: RouterConfig, store: AuthorizationStore): Promise<void> {
@@ -150,7 +159,7 @@ async function authorize(request: IncomingMessage, response: ServerResponse, url
     const csrf = randomSecret(24);
     response.setHeader('set-cookie', `__Host-latch_csrf=${csrf}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`);
     const hidden = [...url.searchParams].map(([name, value]) => `<input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(value)}">`).join('');
-    renderAuthorization(response, hidden, scopes, csrf);
+    renderAuthorization(response, hidden, scopes, csrf, identity);
     return;
   }
   const csrfCookie = /(?:^|;\s*)__Host-latch_csrf=([^;]+)/.exec(request.headers.cookie ?? '')?.[1];
@@ -273,11 +282,11 @@ async function jsonBody(request: IncomingMessage): Promise<Record<string, unknow
 function secureHeaders(response: ServerResponse): void {
   response.setHeader('cache-control', 'no-store'); response.setHeader('referrer-policy', 'no-referrer');
   response.setHeader('x-content-type-options', 'nosniff'); response.setHeader('x-frame-options', 'DENY');
-  response.setHeader('content-security-policy', "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+  response.setHeader('content-security-policy', "default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
 }
 function json(response: ServerResponse, status: number, body: unknown): void { if (response.headersSent) return; response.statusCode = status; response.setHeader('content-type', 'application/json; charset=utf-8'); response.end(JSON.stringify(body)); }
 
-function page(response: ServerResponse, path: string, authReady: boolean, returnTo: string | null): void { renderPage(response, path, authReady, returnTo); }
+function page(response: ServerResponse, path: string, authReady: boolean, returnTo: string | null, identity: { id: string; email?: string } | null): void { renderPage(response, path, authReady, returnTo, identity); }
 function oauthResource(config: RouterConfig): string { return `${config.publicBaseUrl}/mcp`; }
 function rateGroup(path: string): string {
   if (path === '/oauth/authorize') return 'oauth-authorize';

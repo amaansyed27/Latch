@@ -282,7 +282,7 @@ async function jsonBody(request: IncomingMessage): Promise<Record<string, unknow
 function secureHeaders(response: ServerResponse): void {
   response.setHeader('cache-control', 'no-store'); response.setHeader('referrer-policy', 'no-referrer');
   response.setHeader('x-content-type-options', 'nosniff'); response.setHeader('x-frame-options', 'DENY');
-  response.setHeader('content-security-policy', "default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+  response.setHeader('content-security-policy', "default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'");
 }
 function json(response: ServerResponse, status: number, body: unknown): void { if (response.headersSent) return; response.statusCode = status; response.setHeader('content-type', 'application/json; charset=utf-8'); response.end(JSON.stringify(body)); }
 

@@ -37,6 +37,7 @@ export class LinkServer {
   readonly #pending = new Map<string, PendingDeviceRequest>();
   #readyPromise: Promise<void> | null = null;
   #unsubscribeDispatch: (() => Promise<void>) | null = null;
+  #unsubscribeRevocations: (() => Promise<void>) | null = null;
 
   constructor(
     private readonly config: RouterConfig,
@@ -59,7 +60,7 @@ export class LinkServer {
 
   attach(server: HttpServer): void {
     server.on('upgrade', (request, socket, head) => {
-      this.#upgrade(request, socket, head);
+      void this.#upgrade(request, socket, head);
     });
   }
 
@@ -87,6 +88,10 @@ export class LinkServer {
       await this.#unsubscribeDispatch();
       this.#unsubscribeDispatch = null;
     }
+    if (this.#unsubscribeRevocations !== null) {
+      await this.#unsubscribeRevocations();
+      this.#unsubscribeRevocations = null;
+    }
     await this.coordinator.stop();
     await new Promise<void>((resolve) => this.#wss.close(() => resolve()));
   }
@@ -97,10 +102,13 @@ export class LinkServer {
       this.instanceId,
       (message) => this.#dispatch(message),
     );
+    this.#unsubscribeRevocations = await this.coordinator.subscribeRevocations(
+      async (deviceId) => { this.#sessions.get(deviceId)?.ws.close(1008, 'device revoked'); },
+    );
   }
 
-  #upgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
-    if (!allowRequest(request, 'device-link', 60)) {
+  async #upgrade(request: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
+    if (!(await allowRequest(this.coordinator, request, 'device-link', 60))) {
       socket.end('HTTP/1.1 429 Too Many Requests\r\nConnection: close\r\n\r\n');
       return;
     }
@@ -138,6 +146,11 @@ export class LinkServer {
       if (message?.type !== 'hello') {
         sendError(ws, 'invalid_message', 'expected a hello authentication message');
         ws.close(1008, 'invalid authentication');
+        return;
+      }
+      if (!(await this.coordinator.allowRateLimit(`device-auth:${message.device_id}`, 20, 60_000))) {
+        sendError(ws, 'rate_limited', 'too many device authentication attempts');
+        ws.close(1008, 'rate limited');
         return;
       }
       const owned = message.device_credential && this.authorizationStore

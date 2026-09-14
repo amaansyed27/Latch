@@ -23,7 +23,7 @@ export function createRouterRuntime(
   const linkServer = new LinkServer(config, coordinator, undefined, store);
   const httpHandler = createHttpHandler(config, coordinator, () => linkServer.ready);
   const mcpHandler = createMcpHandler(config, coordinator, () => linkServer.ready, store);
-  const oauthHandler = store ? createOAuthHandler(config, store) : null;
+  const oauthHandler = store ? createOAuthHandler(config, store, coordinator) : null;
   const server = createServer((request, response) => {
     let url = new URL(request.url ?? '/', 'http://router.local');
     const publicPath = url.searchParams.get('latch_public_path');
@@ -34,7 +34,7 @@ export function createRouterRuntime(
     }
     if (url.pathname === '/mcp' || url.searchParams.has('latch_mcp')) {
       mcpHandler(request, response);
-    } else if (oauthHandler && (url.pathname.startsWith('/oauth/') || url.pathname.startsWith('/.well-known/') || url.pathname.startsWith('/api/auth/') || url.pathname.startsWith('/api/pairing/') || url.pathname === '/api/my/devices' || ['/','/login','/devices','/privacy','/terms','/support','/security'].includes(url.pathname))) {
+    } else if (oauthHandler && (url.pathname.startsWith('/oauth/') || url.pathname.startsWith('/.well-known/') || url.pathname.startsWith('/api/auth/') || url.pathname.startsWith('/api/pairing/') || url.pathname.startsWith('/assets/') || url.pathname === '/api/my/devices' || ['/','/login','/devices','/privacy','/terms','/support','/security'].includes(url.pathname))) {
       oauthHandler(request, response);
     } else {
       httpHandler(request, response);

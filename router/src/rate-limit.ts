@@ -1,14 +1,15 @@
+import { createHash } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 
-const buckets = new Map<string, { count: number; resetAt: number }>();
+import type { RelayCoordinator } from './coordinator.js';
 
-// ponytail: per-instance limiter; move counters to Redis if distributed abuse is observed.
-export function allowRequest(request: IncomingMessage, group: string, limit: number, windowMs = 60_000): boolean {
+export async function allowRequest(coordinator: RelayCoordinator, request: IncomingMessage, group: string, limit: number, windowMs = 60_000, subject?: string): Promise<boolean> {
   const ip = String(request.headers['x-forwarded-for'] ?? request.socket.remoteAddress ?? 'unknown').split(',')[0]!.trim();
-  const key = `${group}:${ip}`;
-  const now = Date.now();
-  const current = buckets.get(key);
-  if (!current || current.resetAt <= now) { buckets.set(key, { count: 1, resetAt: now + windowMs }); return true; }
-  current.count += 1;
-  return current.count <= limit;
+  const identity = createHash('sha256').update(`${ip}\0${subject ?? ''}`).digest('base64url');
+  try {
+    return await coordinator.allowRateLimit(`${group}:${identity}`, limit, windowMs);
+  } catch (error) {
+    console.warn('rate limiter unavailable', { group, error_name: error instanceof Error ? error.name : 'unknown' });
+    return false;
+  }
 }

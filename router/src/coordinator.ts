@@ -5,6 +5,7 @@ import type {
 } from './types.js';
 
 export type DispatchHandler = (message: DispatchMessage) => Promise<void>;
+export type RevocationHandler = (deviceId: string) => Promise<void>;
 
 export interface RelayCoordinator {
   start(): Promise<void>;
@@ -33,4 +34,7 @@ export interface RelayCoordinator {
     timeoutMs: number,
   ): Promise<RelayCompletion>;
   respond(requestId: string, completion: RelayCompletion): Promise<void>;
+  allowRateLimit(bucket: string, limit: number, windowMs: number): Promise<boolean>;
+  revokeDevice(deviceId: string): Promise<void>;
+  subscribeRevocations(handler: RevocationHandler): Promise<() => Promise<void>>;
 }

@@ -70,15 +70,12 @@ impl LinkClient {
     pub async fn run(&mut self) -> Result<(), LinkError> {
         loop {
             match self.run_session().await {
-                Ok(()) => warn!("router connection closed; reconnecting"),
-                Err(error) => warn!(error = %error, "router connection failed; reconnecting"),
+                Ok(()) => warn!("Connection lost"),
+                Err(error) => warn!(error = %error, "Connection lost"),
             }
 
             let delay = self.backoff.next_delay();
-            info!(
-                delay_ms = delay.as_millis(),
-                "waiting before router reconnect"
-            );
+            info!(delay_ms = delay.as_millis(), "Reconnecting");
             sleep(delay).await;
         }
     }
@@ -146,7 +143,7 @@ impl LinkClient {
                 info!(
                     device_id = %self.identity.device_id,
                     device_name = %self.identity.device_name,
-                    "connected to Latch Router"
+                    "Connected to Latch"
                 );
             }
             ServerMessage::Error { code, message } => {

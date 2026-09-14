@@ -5,14 +5,16 @@ import type { AuthorizationStore, Principal } from './authorization-store.js';
 import { LATCH_SCOPES, randomSecret, validScopes } from './authorization-store.js';
 import { safeTokenEqual } from './auth.js';
 import type { RouterConfig } from './config.js';
+import type { RelayCoordinator } from './coordinator.js';
 import { allowRequest } from './rate-limit.js';
 import { isUuid } from './validation.js';
+import { escapeHtml, renderAuthorization, renderPage, serveAsset } from './web-ui.js';
 
 const MAX_BODY = 32 * 1024;
 
-export function createOAuthHandler(config: RouterConfig, store: AuthorizationStore) {
+export function createOAuthHandler(config: RouterConfig, store: AuthorizationStore, coordinator: RelayCoordinator) {
   return (request: IncomingMessage, response: ServerResponse): void => {
-    void handleOAuth(request, response, config, store).catch((error: unknown) => {
+    void handleOAuth(request, response, config, store, coordinator).catch((error: unknown) => {
       console.error('authorization request failed', { error_name: error instanceof Error ? error.name : 'unknown' });
       json(response, 500, { error: 'server_error' });
     });
@@ -30,11 +32,12 @@ export async function authenticateBearer(
   return store ? store.authenticateAccessToken(match[1]!, oauthResource(config)) : null;
 }
 
-async function handleOAuth(request: IncomingMessage, response: ServerResponse, config: RouterConfig, store: AuthorizationStore): Promise<void> {
+async function handleOAuth(request: IncomingMessage, response: ServerResponse, config: RouterConfig, store: AuthorizationStore, coordinator: RelayCoordinator): Promise<void> {
   const url = new URL(request.url ?? '/', config.publicBaseUrl);
   secureHeaders(response);
-  const sensitive = url.pathname.startsWith('/oauth/') || url.pathname.startsWith('/api/pairing/');
-  if (sensitive && !allowRequest(request, url.pathname, url.pathname === '/api/pairing/exchange' ? 20 : 60)) { json(response, 429, { error: 'rate_limited' }); return; }
+  if (request.method === 'GET' && serveAsset(response, url.pathname)) return;
+  const sensitive = url.pathname.startsWith('/oauth/') || url.pathname.startsWith('/api/auth/') || url.pathname.startsWith('/api/pairing/') || url.pathname === '/api/my/devices';
+  if (sensitive && !(await allowRequest(coordinator, request, rateGroup(url.pathname), url.pathname === '/api/pairing/exchange' ? 20 : 60))) { json(response, 429, { error: 'rate_limited' }); return; }
 
   if (request.method === 'GET' && url.pathname === '/.well-known/oauth-protected-resource') {
     json(response, 200, { resource: oauthResource(config), authorization_servers: [config.publicBaseUrl], scopes_supported: LATCH_SCOPES, resource_documentation: `${config.publicBaseUrl}/security`, resource_policy_uri: `${config.publicBaseUrl}/privacy`, resource_tos_uri: `${config.publicBaseUrl}/terms` });
@@ -88,17 +91,20 @@ async function handleOAuth(request: IncomingMessage, response: ServerResponse, c
     const identity = await neonSession(request.headers, config.neonAuthBaseUrl);
     if (!identity) { json(response, 401, { error: 'unauthorized' }); return; }
     const userId = await store.upsertUser(identity.id, identity.email);
+    if (!(await allowRequest(coordinator, request, url.pathname, 60, 60_000, userId))) { json(response, 429, { error: 'rate_limited' }); return; }
     if (request.method === 'POST' && url.pathname === '/api/pairing/create') {
       json(response, 201, { pairing_code: await store.createPairingCode(userId, 10 * 60_000), expires_in: 600 });
       return;
     }
     if (request.method === 'GET') {
-      json(response, 200, { devices: await store.listDevices(userId) });
+      const online = new Set((await coordinator.listDevices()).filter((device) => device.owner_user_id === userId).map((device) => device.device_id));
+      json(response, 200, { devices: (await store.listDevices(userId)).map((device) => ({ ...device, online: online.has(device.deviceId) })) });
       return;
     }
     if (request.method === 'DELETE') {
       const body = await jsonBody(request);
       const removed = body && typeof body.device_id === 'string' && await store.revokeDevice(userId, body.device_id);
+      if (removed) await coordinator.revokeDevice(body!.device_id as string);
       json(response, removed ? 200 : 404, removed ? { revoked: true } : { error: 'device_not_found' });
       return;
     }
@@ -143,10 +149,8 @@ async function authorize(request: IncomingMessage, response: ServerResponse, url
   if (request.method === 'GET') {
     const csrf = randomSecret(24);
     response.setHeader('set-cookie', `__Host-latch_csrf=${csrf}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`);
-    const hidden = [...url.searchParams].map(([name, value]) => `<input type="hidden" name="${html(name)}" value="${html(value)}">`).join('');
-    response.statusCode = 200;
-    response.setHeader('content-type', 'text/html; charset=utf-8');
-    response.end(`<!doctype html><meta name="viewport" content="width=device-width"><title>Authorize Latch</title><style>body{max-width:40rem;margin:12vh auto;padding:1.5rem;font:18px system-ui;line-height:1.5}button{padding:.7rem 1rem;font:inherit}</style><h1>Authorize Latch</h1><p>Allow ChatGPT to use these capabilities on your paired computers:</p><ul>${scopes.map((scope) => `<li>${html(scope)}</li>`).join('')}</ul><p>Commands run with your OS account permissions and are not filesystem-sandboxed.</p><form method="post" action="/oauth/authorize">${hidden}<input type="hidden" name="csrf" value="${csrf}"><button name="approve" value="yes">Allow</button></form>`);
+    const hidden = [...url.searchParams].map(([name, value]) => `<input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(value)}">`).join('');
+    renderAuthorization(response, hidden, scopes, csrf);
     return;
   }
   const csrfCookie = /(?:^|;\s*)__Host-latch_csrf=([^;]+)/.exec(request.headers.cookie ?? '')?.[1];
@@ -269,25 +273,20 @@ async function jsonBody(request: IncomingMessage): Promise<Record<string, unknow
 function secureHeaders(response: ServerResponse): void {
   response.setHeader('cache-control', 'no-store'); response.setHeader('referrer-policy', 'no-referrer');
   response.setHeader('x-content-type-options', 'nosniff'); response.setHeader('x-frame-options', 'DENY');
-  response.setHeader('content-security-policy', "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
+  response.setHeader('content-security-policy', "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
 }
 function json(response: ServerResponse, status: number, body: unknown): void { if (response.headersSent) return; response.statusCode = status; response.setHeader('content-type', 'application/json; charset=utf-8'); response.end(JSON.stringify(body)); }
 
-function page(response: ServerResponse, path: string, authReady: boolean, returnTo: string | null): void {
-  const pages: Record<string, [string, string]> = {
-    '/': ['Latch', 'Use your own computer from ChatGPT. Pair a device, then let approved Latch tools work through the outbound encrypted connection.'],
-    '/privacy': ['Privacy', 'Latch stores account, authorization, and device metadata. The relay does not durably store file contents, command output, source code, or conversation content.'],
-    '/terms': ['Terms', 'You are responsible for commands you authorize. Latch commands run with the permissions of the OS user running latch-link.'],
-    '/support': ['Support', 'Support: open an issue at github.com/amaansyed27/Latch. Never include credentials, pairing codes, or tokens.'],
-    '/security': ['Security', 'Filesystem tools are workspace-confined. Command execution is not filesystem-sandboxed and can access anything available to the OS user running latch-link. Devices and OAuth grants can be revoked independently.'],
-    '/devices': ['My devices', 'Create a short-lived pairing code, see your devices, and revoke access.'],
-  };
-  const [title, copy] = pages[path] ?? ['Sign in', authReady ? 'Sign in to authorize Latch and manage your paired computers.' : 'Managed sign-in is still provisioning.'];
-  const login = path === '/login' && authReady ? `<form id="login"><input name="email" type="email" autocomplete="email" placeholder="Email" required><input name="password" type="password" autocomplete="current-password" placeholder="Password" required><button name="action" value="sign-in">Sign in</button><button name="action" value="sign-up">Create account</button></form><script>document.querySelector('#login').onsubmit=async(e)=>{e.preventDefault();const f=new FormData(e.target);const action=e.submitter.value;f.delete('action');const body=Object.fromEntries(f);if(action==='sign-up')body.name=body.email.split('@')[0];const r=await fetch('/api/auth/'+action+'/email',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});if(r.ok)location.href=${JSON.stringify(returnTo && returnTo.startsWith('/') ? returnTo : '/devices')};else alert('Authentication failed')}</script>` : '';
-  const devices = path === '/devices' && authReady ? `<button id="pair">Create pairing code</button><pre id="code"></pre><ul id="devices"></ul><script>async function load(){const r=await fetch('/api/my/devices');if(r.status===401){location.href='/login?return_to=/devices';return}const j=await r.json(),list=document.querySelector('#devices');list.replaceChildren(...j.devices.map(d=>{const li=document.createElement('li'),code=document.createElement('code'),button=document.createElement('button');li.append(document.createTextNode(d.deviceName+' '));code.textContent=d.deviceId;button.textContent='Revoke';button.dataset.id=d.deviceId;li.append(code,' ',button);return li}))}document.querySelector('#pair').onclick=async()=>{const r=await fetch('/api/pairing/create',{method:'POST'});const j=await r.json();document.querySelector('#code').textContent=j.pairing_code?'Run: latch-link pair '+j.pairing_code:'Unable to create code'};document.querySelector('#devices').onclick=async(e)=>{if(e.target.dataset.id&&confirm('Revoke this device?')){await fetch('/api/my/devices',{method:'DELETE',headers:{'content-type':'application/json'},body:JSON.stringify({device_id:e.target.dataset.id})});load()}};load()</script>` : '';
-  response.statusCode = 200; response.setHeader('content-type', 'text/html; charset=utf-8');
-  response.end(`<!doctype html><meta name="viewport" content="width=device-width"><title>${title} · Latch</title><style>body{max-width:44rem;margin:12vh auto;padding:1.5rem;font:18px system-ui;line-height:1.55;color:#182018}nav a{margin-right:1rem}input,button{margin:.8rem .4rem .8rem 0;padding:.7rem;font:inherit;box-sizing:border-box}input{display:block;width:100%}code,pre{overflow-wrap:anywhere}</style><nav><a href="/">Latch</a><a href="/devices">Devices</a><a href="/security">Security</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/support">Support</a></nav><h1>${title}</h1><p>${copy}</p>${login}${devices}`);
-}
-
-function html(value: string): string { return value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]!); }
+function page(response: ServerResponse, path: string, authReady: boolean, returnTo: string | null): void { renderPage(response, path, authReady, returnTo); }
 function oauthResource(config: RouterConfig): string { return `${config.publicBaseUrl}/mcp`; }
+function rateGroup(path: string): string {
+  if (path === '/oauth/authorize') return 'oauth-authorize';
+  if (path === '/oauth/token') return 'oauth-token';
+  if (path === '/oauth/register') return 'oauth-register';
+  if (path === '/oauth/revoke') return 'oauth-revoke';
+  if (path === '/api/pairing/create') return 'pairing-create';
+  if (path === '/api/pairing/exchange') return 'pairing-exchange';
+  if (path === '/api/my/devices') return 'device-management';
+  if (path.startsWith('/api/auth/')) return 'managed-auth';
+  return 'sensitive-other';
+}

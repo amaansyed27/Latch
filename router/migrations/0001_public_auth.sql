@@ -52,3 +52,10 @@ CREATE TABLE IF NOT EXISTS latch_oauth_tokens (
   revoked_at timestamptz
 );
 CREATE INDEX IF NOT EXISTS latch_oauth_tokens_family_idx ON latch_oauth_tokens(family_id);
+
+CREATE TABLE IF NOT EXISTS latch_oauth_families (
+  family_id uuid PRIMARY KEY,
+  revoked_at timestamptz
+);
+INSERT INTO latch_oauth_families (family_id)
+SELECT DISTINCT family_id FROM latch_oauth_tokens ON CONFLICT DO NOTHING;

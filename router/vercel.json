@@ -14,7 +14,7 @@
       "destination": "/api/router?latch_public_path=/"
     },
     {
-      "source": "/:page(login|devices|privacy|terms|support|security)",
+      "source": "/:page(login|devices|download|privacy|terms|support|security)",
       "destination": "/api/router?latch_public_path=/:page"
     },
     {

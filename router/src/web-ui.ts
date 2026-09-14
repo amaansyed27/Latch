@@ -1,5 +1,6 @@
 import type { ServerResponse } from 'node:http';
-import { CSS, JS } from './web-assets.js';
+import { CSS } from './web-assets.js';
+import { JS } from './web-script.js';
 
 export interface WebIdentity { id: string; email?: string }
 const pages: Record<string, [string, string, string]> = {

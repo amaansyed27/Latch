@@ -1,6 +1,6 @@
 import { createClient } from '@redis/client';
 
-import type { DispatchHandler, RelayCoordinator } from './coordinator.js';
+import type { DispatchHandler, RelayCoordinator, RevocationHandler } from './coordinator.js';
 import type {
   DevicePresence,
   DispatchMessage,
@@ -206,6 +206,30 @@ export class RedisCoordinator implements RelayCoordinator {
   async respond(requestId: string, completion: RelayCompletion): Promise<void> {
     await this.start();
     await this.#command.publish(responseChannel(requestId), JSON.stringify(completion));
+  }
+
+  async allowRateLimit(bucket: string, limit: number, windowMs: number): Promise<boolean> {
+    await this.start();
+    const count = await this.#command.eval(
+      "local n=redis.call('INCR',KEYS[1]); if n==1 then redis.call('PEXPIRE',KEYS[1],ARGV[1]) end; return n",
+      { keys: [`${PREFIX}rate:${bucket}`], arguments: [String(windowMs)] },
+    );
+    return Number(count) <= limit;
+  }
+
+  async revokeDevice(deviceId: string): Promise<void> {
+    await this.start();
+    await this.#command.del(deviceKey(deviceId));
+    await this.#command.publish(`${PREFIX}revoked`, deviceId);
+  }
+
+  async subscribeRevocations(handler: RevocationHandler): Promise<() => Promise<void>> {
+    await this.start();
+    const listener = (deviceId: string) => { void handler(deviceId).catch(() => undefined); };
+    await this.#dispatchSubscriber.subscribe(`${PREFIX}revoked`, listener);
+    return async () => {
+      if (this.#dispatchSubscriber.isOpen) await this.#dispatchSubscriber.unsubscribe(`${PREFIX}revoked`, listener);
+    };
   }
 
   async #start(): Promise<void> {

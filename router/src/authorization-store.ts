@@ -161,9 +161,16 @@ export class PostgresAuthorizationStore implements AuthorizationStore {
   }
 
   async refresh(refreshToken: string, clientId: string, resource: string): Promise<TokenSet | null> {
+    const tokenHash = hash(refreshToken);
+    const replayed = await this.#sql`UPDATE latch_oauth_families SET revoked_at = now()
+      WHERE family_id = (SELECT family_id FROM latch_oauth_tokens
+        WHERE token_hash = ${tokenHash} AND kind = 'refresh' AND revoked_at IS NOT NULL)
+      RETURNING family_id`;
+    if (replayed.length > 0) return null;
     const rows = await this.#sql`UPDATE latch_oauth_tokens SET revoked_at = now()
-      WHERE token_hash = ${hash(refreshToken)} AND kind = 'refresh' AND client_id = ${clientId}
+      WHERE token_hash = ${tokenHash} AND kind = 'refresh' AND client_id = ${clientId}
         AND resource = ${resource} AND revoked_at IS NULL AND expires_at > now()
+        AND EXISTS (SELECT 1 FROM latch_oauth_families f WHERE f.family_id = latch_oauth_tokens.family_id AND f.revoked_at IS NULL)
       RETURNING user_id::text, scopes, family_id::text`;
     const row = rows[0];
     if (!row) return null;
@@ -172,14 +179,15 @@ export class PostgresAuthorizationStore implements AuthorizationStore {
 
   async authenticateAccessToken(token: string, resource: string): Promise<Principal | null> {
     const rows = await this.#sql`SELECT user_id::text, client_id, scopes, resource
-      FROM latch_oauth_tokens WHERE token_hash = ${hash(token)} AND kind = 'access'
-        AND resource = ${resource} AND revoked_at IS NULL AND expires_at > now()`;
+      FROM latch_oauth_tokens t WHERE token_hash = ${hash(token)} AND kind = 'access'
+        AND resource = ${resource} AND revoked_at IS NULL AND expires_at > now()
+        AND EXISTS (SELECT 1 FROM latch_oauth_families f WHERE f.family_id = t.family_id AND f.revoked_at IS NULL)`;
     const row = rows[0];
     return row ? { userId: String(row.user_id), clientId: String(row.client_id), scopes: row.scopes as string[], resource: String(row.resource) } : null;
   }
 
   async revokeToken(token: string): Promise<void> {
-    await this.#sql`UPDATE latch_oauth_tokens SET revoked_at = now()
+    await this.#sql`UPDATE latch_oauth_families SET revoked_at = now()
       WHERE family_id = (SELECT family_id FROM latch_oauth_tokens WHERE token_hash = ${hash(token)})`;
   }
 
@@ -187,6 +195,7 @@ export class PostgresAuthorizationStore implements AuthorizationStore {
     const accessToken = randomSecret(32);
     const refreshToken = randomSecret(48);
     await this.#sql.transaction([
+      this.#sql`INSERT INTO latch_oauth_families (family_id) VALUES (${familyId}) ON CONFLICT DO NOTHING`,
       this.#sql`INSERT INTO latch_oauth_tokens
         (token_hash, family_id, kind, user_id, client_id, resource, scopes, expires_at)
         VALUES (${hash(accessToken)}, ${familyId}, 'access', ${userId}, ${clientId}, ${resource}, ${scopes}, now() + interval '15 minutes')`,
@@ -244,7 +253,11 @@ export class MemoryAuthorizationStore implements AuthorizationStore {
   }
   async refresh(refreshToken: string, clientId: string, resource: string): Promise<TokenSet | null> {
     const record = this.#tokens.get(hash(refreshToken));
-    if (!record || record.kind !== 'refresh' || record.revoked || record.expiresAt <= this.now() || record.clientId !== clientId || record.resource !== resource) return null;
+    if (!record || record.kind !== 'refresh' || record.expiresAt <= this.now() || record.clientId !== clientId || record.resource !== resource) return null;
+    if (record.revoked) {
+      for (const value of this.#tokens.values()) if (value.familyId === record.familyId) value.revoked = true;
+      return null;
+    }
     record.revoked = true; return this.#issue(record.userId, clientId, resource, record.scopes, record.familyId);
   }
   async authenticateAccessToken(token: string, resource: string): Promise<Principal | null> { const record = this.#tokens.get(hash(token)); return record && record.kind === 'access' && !record.revoked && record.expiresAt > this.now() && record.resource === resource ? record : null; }

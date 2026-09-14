@@ -28,13 +28,13 @@ Production accepts ChatGPT-hosted CIMD documents. `LATCH_APP_TOKEN` is a test co
 Sign in at `/login`, open `/devices`, and create a ten-minute one-time pairing code. Then run:
 
 ```powershell
-$env:LATCH_ROUTER_URL="https://latch-router.vercel.app"
-$env:LATCH_DEVICE_NAME=$env:COMPUTERNAME
 cargo run -p latch-link -- pair <code>
 cargo run -p latch-link
 ```
 
-The server stores only hashes of pairing and device credentials. On Windows, latch-link stores its unique credential in Windows Credential Manager. The persisted DeviceId remains in `%LOCALAPPDATA%\Latch\device.json`. Revoking a device blocks requests and reconnects; an active connection is closed at its next heartbeat.
+Production Router URL and the computer name now have safe defaults; environment variables remain development overrides. The server stores only hashes of pairing and device credentials. On Windows, latch-link stores its unique credential in Windows Credential Manager. The persisted DeviceId remains in `%LOCALAPPDATA%\Latch\device.json`. Revoking a device removes presence, rejects new work through the durable owner check, and closes the live connection through Redis Pub/Sub.
+
+For a one-week readiness check, run `./scripts/latch-doctor.ps1` and follow [dogfood-v0.4.1.md](dogfood-v0.4.1.md).
 
 ## Durable and ephemeral data
 

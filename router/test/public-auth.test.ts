@@ -37,7 +37,7 @@ void test('OAuth store enforces PKCE, one-time codes, refresh rotation, pairing,
   const rotated = await store.refresh(tokens.refreshToken, request.clientId, request.resource);
   assert(rotated);
   assert.equal(await store.refresh(tokens.refreshToken, request.clientId, request.resource), null);
-  await store.revokeToken(rotated.refreshToken);
+  assert.equal(await store.refresh(rotated.refreshToken, request.clientId, request.resource), null);
   assert.equal(await store.authenticateAccessToken(rotated.accessToken, request.resource), null);
 
   assert(await store.revokeDevice(user, DEVICE_A));
@@ -54,6 +54,10 @@ void test('OAuth-authenticated MCP filters devices and scopes by user', async ()
   const userB = await store.upsertUser('user-b');
   const coordinator = new MemoryCoordinator();
   const config = testConfig({ allowLegacyAppToken: false });
+  const pairA = await store.createPairingCode(userA, 60_000);
+  const pairB = await store.createPairingCode(userB, 60_000);
+  assert(await store.exchangePairingCode(pairA, DEVICE_A, 'A laptop'));
+  assert(await store.exchangePairingCode(pairB, DEVICE_B, 'B laptop'));
   const runtime = createRouterRuntime(config, coordinator, store);
   await runtime.ready;
   await new Promise<void>((resolve) => runtime.server.listen(0, '127.0.0.1', resolve));
@@ -64,7 +68,7 @@ void test('OAuth-authenticated MCP filters devices and scopes by user', async ()
   await coordinator.registerDevice({ device_id: DEVICE_B, device_name: 'B laptop', status: 'online', connected_at: new Date().toISOString(), instance_id: 'b', connection_id: 'b', owner_user_id: userB });
   const verifier = 'p'.repeat(48);
   const request = { clientId: 'client', redirectUri: 'https://client/callback', resource: `${baseUrl}/mcp` };
-  const code = await store.createAuthorizationCode({ ...request, userId: userA, scopes: ['latch:devices:read', 'latch:workspace:open'], codeChallenge: pkceChallenge(verifier) });
+  const code = await store.createAuthorizationCode({ ...request, userId: userA, scopes: ['latch:devices:read', 'latch:workspace:open', 'latch:exec:run'], codeChallenge: pkceChallenge(verifier) });
   const tokens = await store.exchangeAuthorizationCode(code, verifier, request); assert(tokens);
   const client = new Client({ name: 'oauth-test', version: '1' });
   const transport = new StreamableHTTPClientTransport(new URL(`${baseUrl}/mcp`), { requestInit: { headers: { authorization: `Bearer ${tokens.accessToken}` } } });
@@ -76,8 +80,12 @@ void test('OAuth-authenticated MCP filters devices and scopes by user', async ()
     assert.deepEqual((listed.structuredContent as { devices: { device_id: string }[] }).devices.map((device) => device.device_id), [DEVICE_A]);
     const denied = await client.callTool({ name: 'latch_workspace_open', arguments: { device_id: DEVICE_B, path: 'C:\\safe' } });
     assert.equal(toolError(denied).code, 'device_not_found');
-    const underScoped = await client.callTool({ name: 'latch_exec_run', arguments: { device_id: DEVICE_A, workspace_id: DEVICE_B, program: 'node', args: [] } });
+    const underScoped = await client.callTool({ name: 'latch_file_read', arguments: { device_id: DEVICE_A, workspace_id: DEVICE_B, relative_path: 'README.md' } });
     assert.equal(toolError(underScoped).code, 'insufficient_scope');
+    assert(await store.revokeDevice(userA, DEVICE_A));
+    await coordinator.revokeDevice(DEVICE_A);
+    const afterRevoke = await client.callTool({ name: 'latch_exec_run', arguments: { device_id: DEVICE_A, workspace_id: DEVICE_B, program: 'node', args: [] } });
+    assert.equal(toolError(afterRevoke).code, 'device_not_found');
   } finally { await transport.close(); await runtime.close(); }
 });
 
@@ -109,5 +117,22 @@ void test('OAuth discovery is public and legacy app tokens are disabled by defau
     const rejected = await fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: `Bearer ${config.appToken}`, 'content-type': 'application/json' }, body: '{}' });
     assert.equal(rejected.status, 401);
     assert.match(rejected.headers.get('www-authenticate') ?? '', /oauth-protected-resource/);
+    for (const path of ['/', '/login', '/devices', '/security', '/privacy', '/terms', '/support', '/assets/latch.css', '/assets/latch.js']) {
+      const page = await fetch(`${base}${path}`);
+      assert.equal(page.status, 200, path);
+    }
   } finally { await runtime.close(); }
+});
+
+void test('distributed rate-limit buckets expire and revocation broadcasts immediately', async () => {
+  const coordinator = new MemoryCoordinator();
+  assert(await coordinator.allowRateLimit('oauth:hashed-subject', 2, 25));
+  assert(await coordinator.allowRateLimit('oauth:hashed-subject', 2, 25));
+  assert.equal(await coordinator.allowRateLimit('oauth:hashed-subject', 2, 25), false);
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert(await coordinator.allowRateLimit('oauth:hashed-subject', 2, 25));
+  let revoked = '';
+  await coordinator.subscribeRevocations(async (deviceId) => { revoked = deviceId; });
+  await coordinator.revokeDevice(DEVICE_A);
+  assert.equal(revoked, DEVICE_A);
 });

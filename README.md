@@ -83,4 +83,4 @@ cargo run -p latch-link
 
 The generated `DeviceId` is persisted outside project workspaces. On Windows the default is `%LOCALAPPDATA%\Latch\device.json`.
 
-See [`docs/public-auth-v0.4.md`](docs/public-auth-v0.4.md) for OAuth, device enrollment, persistence, security, and submission material. See [`docs/router.md`](docs/router.md) for Router setup and [`docs/architecture.md`](docs/architecture.md) for local security boundaries.
+See [`docs/public-auth-v0.4.md`](docs/public-auth-v0.4.md) for OAuth, device enrollment, persistence, and security. For the V0.4.1 readiness check and seven-day workflow, see [`docs/dogfood-v0.4.1.md`](docs/dogfood-v0.4.1.md). See [`docs/router.md`](docs/router.md) for Router setup and [`docs/architecture.md`](docs/architecture.md) for local security boundaries.

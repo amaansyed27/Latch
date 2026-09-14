@@ -26,6 +26,10 @@
       "destination": "/api/router?latch_public_path=/oauth/:path*"
     },
     {
+      "source": "/assets/:path*",
+      "destination": "/api/router?latch_public_path=/assets/:path*"
+    },
+    {
       "source": "/mcp",
       "destination": "/api/router?latch_mcp=1"
     },

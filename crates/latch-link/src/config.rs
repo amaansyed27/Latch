@@ -11,6 +11,7 @@ const ROUTER_URL_ENV: &str = "LATCH_ROUTER_URL";
 const PAIRING_TOKEN_ENV: &str = "LATCH_PAIRING_TOKEN";
 const DEVICE_NAME_ENV: &str = "LATCH_DEVICE_NAME";
 const DEVICE_ID_PATH_ENV: &str = "LATCH_DEVICE_ID_PATH";
+const DEFAULT_ROUTER_URL: &str = "https://latch-router.vercel.app";
 
 pub struct LinkConfig {
     router_url: Url,
@@ -21,11 +22,14 @@ pub struct LinkConfig {
 
 impl LinkConfig {
     pub fn from_env() -> Result<Self, LinkError> {
-        let router_url = required_env(ROUTER_URL_ENV)?;
+        let router_url = env::var(ROUTER_URL_ENV).unwrap_or_else(|_| DEFAULT_ROUTER_URL.to_owned());
         let pairing_token = env::var(PAIRING_TOKEN_ENV)
             .ok()
             .filter(|value| !value.trim().is_empty());
-        let device_name = required_env(DEVICE_NAME_ENV)?;
+        let device_name = env::var(DEVICE_NAME_ENV)
+            .or_else(|_| env::var("COMPUTERNAME"))
+            .or_else(|_| env::var("HOSTNAME"))
+            .unwrap_or_else(|_| "My computer".to_owned());
         let device_id_path = env::var_os(DEVICE_ID_PATH_ENV).map(PathBuf::from);
         Self::new(&router_url, pairing_token, &device_name, device_id_path)
     }
@@ -81,14 +85,6 @@ impl LinkConfig {
         url.set_path("/api/pairing/exchange");
         Ok(url)
     }
-}
-
-fn required_env(name: &'static str) -> Result<String, LinkError> {
-    let value = env::var(name).map_err(|_| LinkError::MissingEnvironment { name })?;
-    if value.trim().is_empty() {
-        return Err(LinkError::EmptyEnvironment { name });
-    }
-    Ok(value)
 }
 
 fn normalize_router_url(input: &str) -> Result<Url, LinkError> {

@@ -1,4 +1,4 @@
-import type { DispatchHandler, RelayCoordinator } from './coordinator.js';
+import type { DispatchHandler, RelayCoordinator, RevocationHandler } from './coordinator.js';
 import type {
   DevicePresence,
   DispatchMessage,
@@ -14,6 +14,8 @@ export class MemoryCoordinator implements RelayCoordinator {
   readonly #devices = new Map<string, DevicePresence>();
   readonly #dispatch = new Map<string, DispatchHandler>();
   readonly #pending = new Map<string, PendingResponse>();
+  readonly #rateLimits = new Map<string, { count: number; resetAt: number }>();
+  readonly #revocations = new Set<RevocationHandler>();
 
   async start(): Promise<void> {}
 
@@ -128,6 +130,27 @@ export class MemoryCoordinator implements RelayCoordinator {
 
   async respond(requestId: string, completion: RelayCompletion): Promise<void> {
     this.#complete(requestId, completion);
+  }
+
+  async allowRateLimit(bucket: string, limit: number, windowMs: number): Promise<boolean> {
+    const now = Date.now();
+    const current = this.#rateLimits.get(bucket);
+    if (!current || current.resetAt <= now) {
+      this.#rateLimits.set(bucket, { count: 1, resetAt: now + windowMs });
+      return true;
+    }
+    current.count += 1;
+    return current.count <= limit;
+  }
+
+  async revokeDevice(deviceId: string): Promise<void> {
+    this.#devices.delete(deviceId);
+    await Promise.allSettled([...this.#revocations].map((handler) => handler(deviceId)));
+  }
+
+  async subscribeRevocations(handler: RevocationHandler): Promise<() => Promise<void>> {
+    this.#revocations.add(handler);
+    return async () => { this.#revocations.delete(handler); };
   }
 
   #complete(requestId: string, completion: RelayCompletion): void {

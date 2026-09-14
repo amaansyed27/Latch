@@ -43,11 +43,15 @@ async function handleMcp(
   ready: () => Promise<void>,
   authorizationStore?: AuthorizationStore,
 ): Promise<void> {
-  if (!allowRequest(request, 'mcp', 120)) {
+  if (!(await allowRequest(coordinator, request, 'mcp-ip', 240))) {
     sendJsonRpcError(response, 429, -32002, 'Rate limit exceeded');
     return;
   }
   const principal = await authenticateBearer(request.headers, config, authorizationStore);
+  if (principal !== null && !(await allowRequest(coordinator, request, 'mcp-principal', 120, 60_000, principal !== 'legacy' ? principal.userId : 'legacy'))) {
+    sendJsonRpcError(response, 429, -32002, 'Rate limit exceeded');
+    return;
+  }
   if (principal === null) {
     response.setHeader('www-authenticate', `Bearer resource_metadata="${config.publicBaseUrl}/.well-known/oauth-protected-resource"`);
     sendJsonRpcError(response, 401, -32001, 'Unauthorized');
@@ -58,7 +62,7 @@ async function handleMcp(
     return;
   }
 
-  const server = createLatchMcpServer(config, coordinator, ready, principal);
+  const server = createLatchMcpServer(config, coordinator, ready, principal, authorizationStore);
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,
@@ -76,6 +80,7 @@ export function createLatchMcpServer(
   coordinator: RelayCoordinator,
   ready: () => Promise<void>,
   principal: Principal | 'legacy' = 'legacy',
+  authorizationStore?: AuthorizationStore,
 ): McpServer {
   const server = new McpServer(
     { name: 'Latch', version: '0.3.0' },
@@ -139,7 +144,7 @@ export function createLatchMcpServer(
         openWorldHint: false,
       },
     }, 'latch:workspace:open'),
-    async ({ device_id, path }) => relayTool(config, coordinator, ready, principal, 'latch:workspace:open', device_id, 'workspace.open', { path }),
+    async ({ device_id, path }) => relayTool(config, coordinator, ready, principal, authorizationStore, 'latch:workspace:open', device_id, 'workspace.open', { path }),
   );
 
   server.registerTool(
@@ -161,7 +166,7 @@ export function createLatchMcpServer(
       },
     }, 'latch:files:read'),
     async ({ device_id, workspace_id, relative_path }) =>
-      relayTool(config, coordinator, ready, principal, 'latch:files:read', device_id, 'fs.read', {
+      relayTool(config, coordinator, ready, principal, authorizationStore, 'latch:files:read', device_id, 'fs.read', {
         workspace_id,
         path: relative_path,
       }),
@@ -195,7 +200,7 @@ export function createLatchMcpServer(
       },
     }, 'latch:exec:run'),
     async ({ device_id, workspace_id, program, args }) =>
-      relayTool(config, coordinator, ready, principal, 'latch:exec:run', device_id, 'exec.run', {
+      relayTool(config, coordinator, ready, principal, authorizationStore, 'latch:exec:run', device_id, 'exec.run', {
         workspace_id,
         program,
         args,
@@ -210,6 +215,7 @@ async function relayTool(
   coordinator: RelayCoordinator,
   ready: () => Promise<void>,
   principal: Principal | 'legacy',
+  authorizationStore: AuthorizationStore | undefined,
   requiredScope: string,
   targetDeviceId: string,
   method: string,
@@ -219,7 +225,8 @@ async function relayTool(
   try {
     await ready();
     const device = await coordinator.getDevice(targetDeviceId);
-    if (device === null || (principal !== 'legacy' && device.owner_user_id !== principal.userId)) {
+    const authorized = principal === 'legacy' || (authorizationStore !== undefined && await authorizationStore.ownsDevice(principal.userId, targetDeviceId));
+    if (device === null || !authorized || (principal !== 'legacy' && device.owner_user_id !== principal.userId)) {
       return toolError('device_not_found', 'The selected device is not online. List devices again.');
     }
     const request: LatchRequestEnvelope = {

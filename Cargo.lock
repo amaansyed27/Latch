@@ -615,7 +615,7 @@ dependencies = [
 
 [[package]]
 name = "latch-core"
-version = "0.2.0"
+version = "0.4.2-beta.1"
 dependencies = [
  "serde",
  "thiserror",
@@ -624,7 +624,7 @@ dependencies = [
 
 [[package]]
 name = "latch-daemon"
-version = "0.2.0"
+version = "0.4.2-beta.1"
 dependencies = [
  "latch-core",
  "latch-engine",
@@ -637,7 +637,7 @@ dependencies = [
 
 [[package]]
 name = "latch-engine"
-version = "0.2.0"
+version = "0.4.2-beta.1"
 dependencies = [
  "latch-core",
  "latch-exec",
@@ -648,7 +648,7 @@ dependencies = [
 
 [[package]]
 name = "latch-exec"
-version = "0.2.0"
+version = "0.4.2-beta.1"
 dependencies = [
  "command-group",
  "latch-core",
@@ -659,7 +659,7 @@ dependencies = [
 
 [[package]]
 name = "latch-fs"
-version = "0.2.0"
+version = "0.4.2-beta.1"
 dependencies = [
  "cap-std",
  "latch-core",
@@ -670,7 +670,7 @@ dependencies = [
 
 [[package]]
 name = "latch-link"
-version = "0.2.0"
+version = "0.4.2-beta.1"
 dependencies = [
  "dirs",
  "futures-util",
@@ -693,7 +693,7 @@ dependencies = [
 
 [[package]]
 name = "latch-protocol"
-version = "0.2.0"
+version = "0.4.2-beta.1"
 dependencies = [
  "latch-core",
  "serde",

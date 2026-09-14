@@ -69,11 +69,19 @@ impl LinkClient {
     }
 
     pub async fn run(&mut self) -> Result<(), LinkError> {
+        self.run_with_status(|_| {}).await
+    }
+
+    pub async fn run_with_status<F>(&mut self, mut status: F) -> Result<(), LinkError>
+    where
+        F: FnMut(bool),
+    {
         loop {
-            match self.run_session().await {
+            match self.run_session(&mut status).await {
                 Ok(()) => warn!("Connection lost"),
                 Err(error) => warn!(error = %error, "Connection lost"),
             }
+            status(false);
 
             let delay = self.backoff.next_delay();
             info!(delay_ms = delay.as_millis(), "Reconnecting");
@@ -101,7 +109,9 @@ impl LinkClient {
             .device_id_path()
             .map_or(default_device_id_path()?, Path::to_path_buf);
         let device_id = load_or_create_device_id(&identity_path)?;
-        let response = reqwest::Client::new()
+        let response = reqwest::Client::builder()
+            .timeout(CONNECT_TIMEOUT)
+            .build()?
             .post(config.pairing_url()?)
             .json(&PairRequest {
                 code,
@@ -121,7 +131,10 @@ impl LinkClient {
         })
     }
 
-    async fn run_session(&mut self) -> Result<(), LinkError> {
+    async fn run_session<F>(&mut self, status: &mut F) -> Result<(), LinkError>
+    where
+        F: FnMut(bool),
+    {
         let (mut socket, _) = timeout(
             CONNECT_TIMEOUT,
             connect_async(self.config.router_url().as_str()),
@@ -151,6 +164,7 @@ impl LinkClient {
                     device_name = %self.identity.device_name,
                     "Connected to Latch"
                 );
+                status(true);
             }
             ServerMessage::Error { code, message } => {
                 return Err(LinkError::HandshakeRejected { code, message });

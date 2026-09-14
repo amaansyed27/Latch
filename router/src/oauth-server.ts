@@ -114,7 +114,7 @@ async function handleOAuth(request: IncomingMessage, response: ServerResponse, c
     await proxyNeonAuth(request, response, url, config.neonAuthBaseUrl);
     return;
   }
-  if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/login' || url.pathname === '/devices' || url.pathname === '/privacy' || url.pathname === '/terms' || url.pathname === '/support' || url.pathname === '/security')) {
+  if (request.method === 'GET' && (url.pathname === '/' || url.pathname === '/login' || url.pathname === '/devices' || url.pathname === '/download' || url.pathname === '/privacy' || url.pathname === '/terms' || url.pathname === '/support' || url.pathname === '/security')) {
     page(response, url.pathname, config.neonAuthBaseUrl !== undefined, url.searchParams.get('return_to'));
     return;
   }

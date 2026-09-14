@@ -125,9 +125,10 @@ void test('OAuth discovery is public and legacy app tokens are disabled by defau
     const issued = await store.exchangeAuthorizationCode(code, verifier, tokenRequest); assert(issued);
     const refreshResponse = await fetch(`${base}/oauth/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'refresh_token', client_id: tokenRequest.clientId, refresh_token: issued.refreshToken }) });
     assert.equal(refreshResponse.status, 200);
-    for (const path of ['/', '/login', '/devices', '/security', '/privacy', '/terms', '/support', '/assets/latch.css', '/assets/latch.js']) {
+    for (const path of ['/', '/login', '/devices', '/download', '/security', '/privacy', '/terms', '/support', '/assets/latch.css', '/assets/latch.js']) {
       const page = await fetch(`${base}${path}`);
       assert.equal(page.status, 200, path);
+      if (path === '/download') assert.match(await page.text(), /LatchSetup-x64\.msi/);
     }
   } finally { await runtime.close(); }
 });

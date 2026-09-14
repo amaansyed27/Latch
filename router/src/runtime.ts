@@ -34,7 +34,7 @@ export function createRouterRuntime(
     }
     if (url.pathname === '/mcp' || url.searchParams.has('latch_mcp')) {
       mcpHandler(request, response);
-    } else if (oauthHandler && (url.pathname.startsWith('/oauth/') || url.pathname.startsWith('/.well-known/') || url.pathname.startsWith('/api/auth/') || url.pathname.startsWith('/api/pairing/') || url.pathname.startsWith('/assets/') || url.pathname === '/api/my/devices' || ['/','/login','/devices','/privacy','/terms','/support','/security'].includes(url.pathname))) {
+    } else if (oauthHandler && (url.pathname.startsWith('/oauth/') || url.pathname.startsWith('/.well-known/') || url.pathname.startsWith('/api/auth/') || url.pathname.startsWith('/api/pairing/') || url.pathname.startsWith('/assets/') || url.pathname === '/api/my/devices' || ['/','/login','/devices','/download','/privacy','/terms','/support','/security'].includes(url.pathname))) {
       oauthHandler(request, response);
     } else {
       httpHandler(request, response);

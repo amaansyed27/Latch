@@ -71,6 +71,15 @@ pub fn store_device_credential(device_id: DeviceId, credential: &str) -> Result<
         .map_err(|_| LinkError::CredentialStore)
 }
 
+pub fn delete_device_credential(device_id: DeviceId) -> Result<(), LinkError> {
+    let entry = keyring::Entry::new("Latch", &device_id.to_string())
+        .map_err(|_| LinkError::CredentialStore)?;
+    match entry.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(_) => Err(LinkError::CredentialStore),
+    }
+}
+
 fn write_new_identity(path: &Path, file: File) -> Result<DeviceId, LinkError> {
     let device_id = DeviceId::new();
     let stored = StoredIdentity {

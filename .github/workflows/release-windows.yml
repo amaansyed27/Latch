@@ -1,0 +1,40 @@
+name: Windows beta release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify release tag
+        shell: pwsh
+        run: if ("${{ github.ref_name }}" -ne "v0.4.2-beta.1") { throw "Expected v0.4.2-beta.1" }
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - run: cargo test --workspace
+      - name: Install WiX
+        run: dotnet tool install --global wix --version 4.0.6 --add-source https://api.nuget.org/v3/index.json
+      - name: Build installer
+        run: ./scripts/build-windows-installer.ps1
+      - name: Verify packaged binary
+        shell: pwsh
+        run: |
+          $extract = Join-Path $env:RUNNER_TEMP 'latch-msi'
+          $process = Start-Process msiexec.exe -ArgumentList '/a', 'artifacts\LatchSetup-x64.msi', '/qn', "TARGETDIR=$extract" -Wait -PassThru
+          if ($process.ExitCode) { throw "MSI extraction failed with $($process.ExitCode)" }
+          $version = & (Get-ChildItem $extract -Filter latch.exe -Recurse | Select-Object -First 1).FullName --version
+          if ($version -ne 'latch 0.4.2-beta.1') { throw "Unexpected version: $version" }
+      - name: Publish prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" artifacts/* --prerelease --generate-notes --title "Latch ${{ github.ref_name }}"

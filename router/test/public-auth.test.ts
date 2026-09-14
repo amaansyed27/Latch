@@ -96,7 +96,8 @@ function toolError(result: unknown): { code: string; message: string } {
 
 void test('OAuth discovery is public and legacy app tokens are disabled by default', async () => {
   const config = testConfig({ allowLegacyAppToken: false });
-  const runtime = createRouterRuntime(config, new MemoryCoordinator(), new MemoryAuthorizationStore());
+  const store = new MemoryAuthorizationStore();
+  const runtime = createRouterRuntime(config, new MemoryCoordinator(), store);
   await runtime.ready; await new Promise<void>((resolve) => runtime.server.listen(0, '127.0.0.1', resolve));
   const address = runtime.server.address(); assert(address && typeof address !== 'string');
   const base = `http://127.0.0.1:${address.port}`;
@@ -117,6 +118,13 @@ void test('OAuth discovery is public and legacy app tokens are disabled by defau
     const rejected = await fetch(`${base}/mcp`, { method: 'POST', headers: { authorization: `Bearer ${config.appToken}`, 'content-type': 'application/json' }, body: '{}' });
     assert.equal(rejected.status, 401);
     assert.match(rejected.headers.get('www-authenticate') ?? '', /oauth-protected-resource/);
+    const user = await store.upsertUser('refresh-client');
+    const verifier = 'r'.repeat(48);
+    const tokenRequest = { clientId: 'refresh-client', redirectUri: 'https://client.example/callback', resource: `${config.publicBaseUrl}/mcp` };
+    const code = await store.createAuthorizationCode({ ...tokenRequest, userId: user, scopes: ['latch:devices:read'], codeChallenge: pkceChallenge(verifier) });
+    const issued = await store.exchangeAuthorizationCode(code, verifier, tokenRequest); assert(issued);
+    const refreshResponse = await fetch(`${base}/oauth/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'refresh_token', client_id: tokenRequest.clientId, refresh_token: issued.refreshToken }) });
+    assert.equal(refreshResponse.status, 200);
     for (const path of ['/', '/login', '/devices', '/security', '/privacy', '/terms', '/support', '/assets/latch.css', '/assets/latch.js']) {
       const page = await fetch(`${base}${path}`);
       assert.equal(page.status, 200, path);

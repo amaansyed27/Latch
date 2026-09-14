@@ -177,7 +177,7 @@ async function authorize(request: IncomingMessage, response: ServerResponse, url
 async function token(response: ServerResponse, body: URLSearchParams, config: RouterConfig, store: AuthorizationStore): Promise<void> {
   const grant = body.get('grant_type');
   const clientId = body.get('client_id') ?? '';
-  const resource = body.get('resource') ?? '';
+  const resource = body.get('resource') ?? (grant === 'refresh_token' ? oauthResource(config) : '');
   let result = null;
   if (resource !== oauthResource(config)) {
     json(response, 400, { error: 'invalid_target' });

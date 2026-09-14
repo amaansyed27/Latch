@@ -23,6 +23,7 @@ use crate::{
 };
 
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 
 type SharedEngine = Arc<Mutex<Engine>>;
 
@@ -121,7 +122,12 @@ impl LinkClient {
     }
 
     async fn run_session(&mut self) -> Result<(), LinkError> {
-        let (mut socket, _) = connect_async(self.config.router_url().as_str()).await?;
+        let (mut socket, _) = timeout(
+            CONNECT_TIMEOUT,
+            connect_async(self.config.router_url().as_str()),
+        )
+        .await
+        .map_err(|_| LinkError::ConnectionTimeout)??;
 
         let hello = ClientMessage::Hello {
             device_id: self.identity.device_id,

@@ -5,6 +5,9 @@ use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .map_err(|_| "TLS crypto provider is already configured differently")?;
     init_logging()?;
 
     let config = LinkConfig::from_env()?;

@@ -32,6 +32,8 @@ pub enum LinkError {
     UnsupportedIdentityVersion { path: PathBuf, version: u8 },
     #[error("websocket error: {0}")]
     WebSocket(#[from] tokio_tungstenite::tungstenite::Error),
+    #[error("router connection attempt timed out")]
+    ConnectionTimeout,
     #[error("router handshake timed out")]
     HandshakeTimeout,
     #[error("router closed the connection during handshake")]

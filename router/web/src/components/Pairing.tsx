@@ -86,7 +86,7 @@ export default function Pairing({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [step, seconds, onPaired]);
+  }, [step, Boolean(seconds)]);
 
   return (
     <Modal

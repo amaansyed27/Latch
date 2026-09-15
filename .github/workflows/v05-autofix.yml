@@ -1,0 +1,48 @@
+name: V0.5 temporary autofix
+
+on:
+  push:
+    branches: ["feat/v0.5-complete-local-agent"]
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v0.5-complete-local-agent
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Repair known compile issues
+        shell: python
+        run: |
+          from pathlib import Path
+
+          exec_lib = Path('crates/latch-exec/src/lib.rs')
+          text = exec_lib.read_text()
+          text = text.replace('pub use runner::{run_blocking, run_with_options};', 'pub use runner::run_blocking;')
+          exec_lib.write_text(text)
+
+          fs = Path('crates/latch-fs/src/workspace_fs.rs')
+          text = fs.read_text()
+          text = text.replace('    time::UNIX_EPOCH,\n', '')
+          text = text.replace('.duration_since(UNIX_EPOCH)', '.into_std()\n                .duration_since(std::time::UNIX_EPOCH)')
+          fs.write_text(text)
+      - name: Format Rust workspace
+        run: cargo fmt --all
+      - name: Commit repair
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates
+          git commit -m "fix: repair v0.5 Rust formatting and compile issues"
+          git push origin HEAD:feat/v0.5-complete-local-agent

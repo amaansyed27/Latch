@@ -23,9 +23,9 @@ export const bootstrap = JSON.parse(
   document.getElementById("latch-bootstrap")?.textContent || "null",
 ) as Bootstrap | null;
 export const DOWNLOAD =
-  "https://github.com/amaansyed27/Latch/releases/download/v0.4.5-beta.1/LatchSetup-x64.msi";
+  "https://github.com/amaansyed27/Latch/releases/download/v0.5.0-beta.1/LatchSetup-x64.msi";
 export const RELEASE =
-  "https://github.com/amaansyed27/Latch/releases/tag/v0.4.5-beta.1";
+  "https://github.com/amaansyed27/Latch/releases/tag/v0.5.0-beta.1";
 export const MCP = "https://latch-router.vercel.app/mcp";
 export function safeReturn(value: string | null): string {
   return value?.startsWith("/") &&

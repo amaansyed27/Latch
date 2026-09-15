@@ -4,9 +4,15 @@ import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 
 export const LATCH_SCOPES = [
   'latch:devices:read',
+  'latch:roots:read',
   'latch:workspace:open',
   'latch:files:read',
+  'latch:files:write',
   'latch:exec:run',
+  'latch:computer:read',
+  'latch:computer:control',
+  'latch:mcp:read',
+  'latch:mcp:call',
 ] as const;
 export type LatchScope = (typeof LATCH_SCOPES)[number];
 

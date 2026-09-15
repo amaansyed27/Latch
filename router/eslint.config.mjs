@@ -23,4 +23,10 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'error',
     },
   },
+  {
+    files: ['src/mcp-server.ts'],
+    rules: {
+      'no-shadow-restricted-names': 'off',
+    },
+  },
 );

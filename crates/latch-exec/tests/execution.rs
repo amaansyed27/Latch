@@ -178,7 +178,7 @@ fn starts_queries_outputs_and_terminates_managed_process() {
     assert!(saw_output, "managed stdout should become observable");
 
     let status = manager.kill(process_id).unwrap();
-    assert!(matches!(status.state, ProcessState::Exited { .. }));
+    assert!(matches!(status.state, ProcessState::Killed));
 
     let output = manager.output(process_id).unwrap();
     assert!(output.stdout.complete);
@@ -201,7 +201,7 @@ fn shutdown_all_terminates_running_process_tree() {
     assert_eq!(report.terminated, 1);
     assert!(matches!(
         manager.status(process_id).unwrap().state,
-        ProcessState::Exited { .. }
+        ProcessState::Killed
     ));
 
     let output = manager.output(process_id).unwrap();

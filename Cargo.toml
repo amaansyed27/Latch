@@ -1,8 +1,11 @@
 [workspace]
 members = [
     "crates/latch-core",
+    "crates/latch-local",
     "crates/latch-fs",
     "crates/latch-exec",
+    "crates/latch-computer",
+    "crates/latch-mcp-client",
     "crates/latch-protocol",
     "crates/latch-engine",
     "crates/latch-daemon",
@@ -12,10 +15,10 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.4.5-beta.1"
+version = "0.5.0-beta.1"
 edition = "2021"
 license = "MIT"
-rust-version = "1.81"
+rust-version = "1.85"
 
 [workspace.dependencies]
 cap-std = "4.0.3"
@@ -28,16 +31,15 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"
-tokio = { version = "1.47", features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { version = "1.47", features = ["macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
 tokio-tungstenite = { version = "0.28", features = ["rustls-tls-native-roots"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
 url = "2.5"
 uuid = { version = "1.18", features = ["serde", "v4"] }
 
-
 [workspace.lints.rust]
-unsafe_code = "forbid"
+unsafe_code = "deny"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
@@ -45,3 +47,13 @@ pedantic = { level = "warn", priority = -1 }
 module_name_repetitions = "allow"
 missing_errors_doc = "allow"
 must_use_candidate = "allow"
+# Request enums are intentionally moved into uniform engine handlers; borrowing every
+# variant would complicate dispatch without reducing allocation or ownership cost.
+needless_pass_by_value = "allow"
+# A small number of uniform handlers keep &self even when a particular operation does
+# not currently need engine state, which keeps the capability surface consistent.
+unused_self = "allow"
+# Domain terms such as content/context are intentionally close and clearer than aliases.
+similar_names = "allow"
+# This is formatting-only and rustfmt already defines the project's statement style.
+semicolon_if_nothing_returned = "allow"

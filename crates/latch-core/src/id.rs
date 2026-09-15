@@ -40,3 +40,5 @@ macro_rules! define_id {
 define_id!(WorkspaceId);
 define_id!(ProcessId);
 define_id!(DeviceId);
+define_id!(RootId);
+define_id!(McpServerId);

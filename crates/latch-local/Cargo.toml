@@ -1,14 +1,20 @@
 [package]
-name = "latch-protocol"
+name = "latch-local"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+dirs.workspace = true
 latch-core = { path = "../latch-core" }
 serde.workspace = true
 serde_json.workspace = true
+thiserror.workspace = true
+url.workspace = true
+
+[dev-dependencies]
+tempfile = "3.21"
 
 [lints]
 workspace = true

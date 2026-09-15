@@ -190,7 +190,9 @@ test("OAuth consent preserves real server validation and displays command permis
   await expect(
     page.getByRole("heading", { name: "Connect a client to Latch." }),
   ).toBeVisible();
-  await expect(page.getByText("Run commands", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Run and manage commands", { exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByText("are not sandboxed.", { exact: true }),
   ).toBeVisible();

@@ -1,4 +1,4 @@
-use std::process::{ChildStderr, ChildStdout, Command, ExitStatus, Stdio};
+use std::process::{ChildStderr, ChildStdin, ChildStdout, Command, ExitStatus, Stdio};
 
 use command_group::{CommandGroup, GroupChild};
 use latch_core::Workspace;
@@ -8,6 +8,7 @@ use crate::{CommandSpec, ExecError};
 
 pub(crate) struct SpawnedGroup {
     pub child: GroupChild,
+    pub stdin: ChildStdin,
     pub stdout: ChildStdout,
     pub stderr: ChildStderr,
 }
@@ -20,27 +21,29 @@ pub(crate) fn spawn_grouped(
     command
         .args(&spec.args)
         .current_dir(workspace.root())
-        .stdin(Stdio::null())
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
     let mut child = spawn_process_group(&mut command)
         .map_err(|source| ExecError::spawn(&spec.program, source))?;
 
+    let stdin = child.inner().stdin.take();
     let stdout = child.inner().stdout.take();
     let stderr = child.inner().stderr.take();
 
-    if let (Some(stdout), Some(stderr)) = (stdout, stderr) {
+    if let (Some(stdin), Some(stdout), Some(stderr)) = (stdin, stdout, stderr) {
         Ok(SpawnedGroup {
             child,
+            stdin,
             stdout,
             stderr,
         })
     } else {
         cleanup_incomplete_spawn(&mut child, &spec.program);
         Err(ExecError::ProcessFailed {
-            message: format!("output pipes were not available for {}", spec.program),
-            source: std::io::Error::other("output pipe missing after spawn"),
+            message: format!("process pipes were not available for {}", spec.program),
+            source: std::io::Error::other("process pipe missing after spawn"),
         })
     }
 }

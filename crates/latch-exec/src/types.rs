@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use latch_core::ProcessId;
+
 pub const DEFAULT_RUN_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 pub const DEFAULT_RUN_OUTPUT_BYTES: usize = 1024 * 1024;
 
@@ -50,9 +52,18 @@ pub struct ExecutionResult {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProcessStart {
+    pub process_id: ProcessId,
+    pub pid: u32,
+    pub started_at_ms: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProcessState {
     Running,
     Exited { exit_code: Option<i32> },
+    Failed { exit_code: Option<i32> },
+    Killed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,6 +81,13 @@ pub struct ManagedStreamOutput {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ManagedOutput {
+    pub stdout: ManagedStreamOutput,
+    pub stderr: ManagedStreamOutput,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProcessPoll {
+    pub status: ProcessStatus,
     pub stdout: ManagedStreamOutput,
     pub stderr: ManagedStreamOutput,
 }

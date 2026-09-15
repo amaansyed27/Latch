@@ -8,6 +8,10 @@ pub enum FsError {
     PathOutsideWorkspace { path: PathBuf },
     #[error("file or directory was not found: {path}")]
     FileNotFound { path: PathBuf },
+    #[error("path already exists: {path}")]
+    AlreadyExists { path: PathBuf },
+    #[error("patch could not be applied to {path}: {message}")]
+    PatchConflict { path: PathBuf, message: String },
     #[error("permission denied for path: {path}")]
     PermissionDenied {
         path: PathBuf,
@@ -28,6 +32,7 @@ impl FsError {
     pub(crate) fn from_io(path: PathBuf, source: io::Error) -> Self {
         match source.kind() {
             io::ErrorKind::NotFound => Self::FileNotFound { path },
+            io::ErrorKind::AlreadyExists => Self::AlreadyExists { path },
             io::ErrorKind::PermissionDenied => Self::PermissionDenied { path, source },
             io::ErrorKind::InvalidInput | io::ErrorKind::InvalidData => Self::InvalidPath { path },
             _ => Self::Io { path, source },

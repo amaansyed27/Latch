@@ -4,11 +4,14 @@ import {
   ArrowUpRight,
   Check,
   Download,
+  Eye,
   FileText,
   Folder,
   Laptop,
   LockKeyhole,
   Monitor,
+  MousePointer2,
+  Plug,
   ShieldCheck,
   Terminal,
 } from "lucide-react";
@@ -29,7 +32,7 @@ export function DownloadPage() {
       <section className="surface download-surface">
         <div className="download-art">
           <Laptop size={88} strokeWidth={1} />
-          <span className="version">v0.4.2-beta.1</span>
+          <span className="version">v0.5.0-beta.1</span>
         </div>
         <div>
           <span className="eyebrow">Windows private beta</span>
@@ -421,27 +424,17 @@ export function DocumentPage({ path }: { path: string }) {
 export function ConsentPage() {
   const auth = bootstrap?.authorization;
   const { user } = useSession();
-  const permissions: Record<string, [typeof Monitor, string, string]> = {
-    "latch:devices:read": [
-      Monitor,
-      "See your computers",
-      "List computers paired to your Latch account.",
-    ],
-    "latch:workspace:open": [
-      Folder,
-      "Open a workspace",
-      "Select a folder on your computer as a workspace.",
-    ],
-    "latch:files:read": [
-      FileText,
-      "Read workspace files",
-      "Read files inside an opened workspace.",
-    ],
-    "latch:exec:run": [
-      Terminal,
-      "Run commands",
-      "Execute programs with your Windows user permissions.",
-    ],
+  const permissionDetails: Record<string, [typeof Monitor, string, string, string]> = {
+    "latch:devices:read": [Monitor, "Computers", "See connected computers", "List computers paired to your Latch account."],
+    "latch:roots:read": [Folder, "Folders", "See approved folder names", "See only the names and opaque IDs of folders approved locally."],
+    "latch:workspace:open": [Folder, "Folders", "Open approved folders", "Open an approved folder or one of its relative subfolders."],
+    "latch:files:read": [FileText, "Files", "Read files", "Read and search files inside an opened approved workspace."],
+    "latch:files:write": [FileText, "Files", "Edit files", "Create, patch, move, and delete files inside an opened approved workspace."],
+    "latch:exec:run": [Terminal, "Terminal", "Run and manage commands", "Run programs as your signed-in Windows user and manage long-running jobs."],
+    "latch:computer:read": [Eye, "Screen", "View screen", "Capture a screen only when explicitly requested and discover visible windows."],
+    "latch:computer:control": [MousePointer2, "Computer control", "Control keyboard and mouse", "Focus windows and send mouse, keyboard, typing, and scroll input."],
+    "latch:mcp:read": [Plug, "Local integrations", "Discover local MCP servers", "See local integrations that you explicitly allow through ChatGPT and list their tools."],
+    "latch:mcp:call": [Plug, "Local integrations", "Use local MCP tools", "Invoke tools on locally configured integrations such as Blender or a browser MCP."],
   };
   if (!auth)
     return (
@@ -450,62 +443,38 @@ export function ConsentPage() {
         <p>Start the connection again from your MCP client.</p>
       </div>
     );
+  const groups = Array.from(new Set(auth.scopes.map((scope) => permissionDetails[scope]?.[1] || "Other")));
   return (
     <section className="surface consent-card">
-      <span className="icon-tile">
-        <LockKeyhole size={25} />
-      </span>
+      <span className="icon-tile"><LockKeyhole size={25} /></span>
       <p className="eyebrow">Review access</p>
       <h1>Connect a client to Latch.</h1>
-      <p className="muted">
-        Continue only if you started this connection in a client you trust.
-      </p>
-      <div className="connected-account">
-        <span>Connected account</span>
-        <strong>{user?.email}</strong>
-      </div>
+      <p className="muted">Continue only if you started this connection in a client you trust. Local permission switches can deny any capability even after OAuth approval.</p>
+      <div className="connected-account"><span>Connected account</span><strong>{user?.email}</strong></div>
       <h2>Requested permissions</h2>
-      <ul className="permission-list">
-        {auth.scopes.map((scope) => {
-          const [Icon, label, description] = permissions[scope] || [
-            ShieldCheck,
-            scope,
-            "Requested access",
-          ];
-          return (
-            <li
-              key={scope}
-              className={scope === "latch:exec:run" ? "permission-command" : ""}
-            >
-              <Icon size={22} />
-              <span>{label}</span>
-              <Hint text={description} />
-            </li>
-          );
-        })}
-      </ul>
-      {auth.scopes.includes("latch:exec:run") && (
-        <div className="notice warning">
-          <Terminal size={20} />
-          <p>
-            Commands run with your Windows account permissions and{" "}
-            <strong>are not sandboxed.</strong>
-          </p>
-        </div>
+      <div className="permission-groups">
+        {groups.map((group) => (
+          <section key={group} className="permission-group">
+            <h3>{group}</h3>
+            <ul className="permission-list">
+              {auth.scopes.filter((scope) => (permissionDetails[scope]?.[1] || "Other") === group).map((scope) => {
+                const [Icon, , label, description] = permissionDetails[scope] || [ShieldCheck, "Other", scope, "Requested access"];
+                const powerful = ["latch:files:write", "latch:exec:run", "latch:computer:control", "latch:mcp:call"].includes(scope);
+                return <li key={scope} className={powerful ? "permission-command" : ""}><Icon size={22} /><span>{label}</span><Hint text={description} /></li>;
+              })}
+            </ul>
+          </section>
+        ))}
+      </div>
+      {(auth.scopes.includes("latch:exec:run") || auth.scopes.includes("latch:computer:control") || auth.scopes.includes("latch:mcp:call")) && (
+        <div className="notice warning"><Terminal size={20} /><p>These permissions can cause real changes on your computer. Commands run with your Windows account permissions and <strong>are not sandboxed.</strong></p></div>
       )}
       <form action="/oauth/authorize" method="post">
-        {Object.entries(auth.params).map(([name, value]) => (
-          <input key={name} type="hidden" name={name} value={value} />
-        ))}
+        {Object.entries(auth.params).map(([name, value]) => <input key={name} type="hidden" name={name} value={value} />)}
         <input type="hidden" name="csrf" value={auth.csrf} />
         <div className="actions">
-          <button className="button primary" name="approve" value="yes">
-            Allow access
-            <ArrowRight size={17} />
-          </button>
-          <button className="button" name="approve" value="no">
-            Cancel
-          </button>
+          <button className="button primary" name="approve" value="yes">Allow access<ArrowRight size={17} /></button>
+          <button className="button" name="approve" value="no">Cancel</button>
         </div>
       </form>
     </section>

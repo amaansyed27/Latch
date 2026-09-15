@@ -119,8 +119,7 @@ mod windows_app {
                 let connection = MenuItemBuilder::with_id("connection", "Connection status")
                     .enabled(false)
                     .build(app)?;
-                let pause =
-                    MenuItemBuilder::with_id("pause", "Pause remote access").build(app)?;
+                let pause = MenuItemBuilder::with_id("pause", "Pause remote access").build(app)?;
                 let restart =
                     MenuItemBuilder::with_id("restart", "Restart connection").build(app)?;
                 let quit = MenuItemBuilder::with_id("quit", "Quit Latch").build(app)?;

@@ -229,7 +229,7 @@ mod platform {
         Enigo, Key, Keyboard, Mouse, Settings,
     };
     use image::{codecs::jpeg::JpegEncoder, DynamicImage, ImageFormat};
-    use winsafe::{prelude::*, HWND};
+    use winsafe::HWND;
     use xcap::{Monitor, Window};
 
     use super::{
@@ -322,17 +322,19 @@ mod platform {
                 if title.trim().is_empty() {
                     return None;
                 }
-                Some(Ok(RawWindow {
-                    native_id: window.id().map_err(operation)?,
-                    title,
-                    process_name: window.app_name().unwrap_or_default(),
-                    x: window.x().map_err(operation)?,
-                    y: window.y().map_err(operation)?,
-                    width: window.width().map_err(operation)?,
-                    height: window.height().map_err(operation)?,
-                    focused: window.is_focused().unwrap_or(false),
-                    minimized: window.is_minimized().unwrap_or(false),
-                }))
+                Some((|| {
+                    Ok(RawWindow {
+                        native_id: window.id().map_err(operation)?,
+                        title,
+                        process_name: window.app_name().unwrap_or_default(),
+                        x: window.x().map_err(operation)?,
+                        y: window.y().map_err(operation)?,
+                        width: window.width().map_err(operation)?,
+                        height: window.height().map_err(operation)?,
+                        focused: window.is_focused().unwrap_or(false),
+                        minimized: window.is_minimized().unwrap_or(false),
+                    })
+                })())
             })
             .collect()
     }

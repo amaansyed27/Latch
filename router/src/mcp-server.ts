@@ -686,11 +686,11 @@ export function createLatchMcpServer(
       },
       'latch:mcp:call',
     ),
-    async ({ device_id, server_id, tool_name, arguments }) =>
+    async ({ device_id, server_id, tool_name, arguments: toolArguments }) =>
       relayTool(config, coordinator, ready, principal, authorizationStore, 'latch:mcp:call', device_id, 'mcp.call', {
         server_id,
         tool_name,
-        arguments,
+        arguments: toolArguments,
       }),
   );
 
@@ -808,7 +808,7 @@ function screenshotSuccess(value: Record<string, unknown>) {
 
 function localMcpSuccess(value: Record<string, unknown>) {
   const result = value.result;
-  const content: Array<Record<string, unknown>> = [];
+  const content: Array<{ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }> = [];
   if (isRecord(result) && Array.isArray(result.content)) {
     for (const block of result.content) {
       if (!isRecord(block)) continue;

@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en" data-theme="system">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Latch</title>
+    <link rel="stylesheet" href="style.css" />
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="titlebar" data-tauri-drag-region>
+        <div class="brand" data-tauri-drag-region>
+          <img src="logo.svg" alt="" />
+          <div data-tauri-drag-region>
+            <strong>Latch</strong>
+            <small id="version">Private beta</small>
+          </div>
+        </div>
+        <div class="title-actions">
+          <span class="state-pill" id="state-pill">
+            <i></i><span id="state-label">Checking…</span>
+          </span>
+          <button class="icon-button" id="hide" aria-label="Hide Latch" title="Hide to tray">×</button>
+        </div>
+      </header>
+
+      <main>
+        <section id="setup-view" hidden>
+          <div class="eyebrow">First-time setup</div>
+          <h1>Connect this computer.</h1>
+          <p class="lede">Pair once. Latch will live quietly in your system tray and reconnect after sign-in.</p>
+
+          <div class="stepper" aria-label="Setup progress">
+            <span class="active"><b>1</b>Account</span>
+            <span><b>2</b>Pair</span>
+            <span><b>3</b>Ready</span>
+          </div>
+
+          <div class="surface setup-card">
+            <div class="setup-step">
+              <span class="number">01</span>
+              <div>
+                <h2>Get a pairing code</h2>
+                <p>Sign in to Latch in your browser, open Devices, and choose Add computer.</p>
+                <button class="button secondary" id="open-devices">Open Latch account ↗</button>
+              </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <div class="setup-step">
+              <span class="number">02</span>
+              <div class="pair-form">
+                <h2>Pair this computer</h2>
+                <p>Paste the one-time code shown in your browser.</p>
+                <label for="pair-code">Pairing code</label>
+                <div class="inset">
+                  <input id="pair-code" autocomplete="off" spellcheck="false" placeholder="Paste pairing code" />
+                </div>
+                <button class="button primary" id="pair">Pair this computer</button>
+                <p class="form-message" id="pair-message" role="status"></p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="status-view" hidden>
+          <div class="eyebrow">This computer</div>
+          <div class="connection-hero surface">
+            <div class="connection-orb"><span></span></div>
+            <div>
+              <small>Latch connection</small>
+              <h1 id="device-name">This computer</h1>
+              <p id="connection-copy">Checking connection…</p>
+            </div>
+          </div>
+
+          <div class="details surface">
+            <div>
+              <span>Status</span>
+              <strong id="detail-status">Checking…</strong>
+            </div>
+            <div>
+              <span>Device ID</span>
+              <code id="device-id">—</code>
+            </div>
+            <div>
+              <span>Router</span>
+              <code id="router">latch-router.vercel.app</code>
+            </div>
+          </div>
+
+          <div class="action-grid">
+            <button class="soft-action" id="dashboard">
+              <span>Dashboard</span><small>Account &amp; devices ↗</small>
+            </button>
+            <button class="soft-action" id="restart">
+              <span>Restart</span><small>Reconnect Latch</small>
+            </button>
+            <button class="soft-action" id="diagnostics">
+              <span>Diagnostics</span><small>Check local setup</small>
+            </button>
+            <button class="soft-action" id="logs">
+              <span>Logs</span><small>Open local logs</small>
+            </button>
+          </div>
+
+          <div class="diagnostics surface" id="diagnostics-panel" hidden>
+            <div class="diagnostics-head">
+              <strong>Diagnostics</strong>
+              <button class="text-button" id="close-diagnostics">Close</button>
+            </div>
+            <pre id="diagnostics-output">Running…</pre>
+          </div>
+
+          <p class="quiet-note">Closing this window keeps Latch running in the tray.</p>
+        </section>
+      </main>
+
+      <footer>
+        <span>Starts automatically with Windows</span>
+        <button class="text-button danger" id="quit">Quit Latch</button>
+      </footer>
+    </div>
+  </body>
+</html>

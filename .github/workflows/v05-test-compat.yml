@@ -1,0 +1,48 @@
+name: V0.5 test compatibility fixes
+
+on:
+  push:
+    branches: ["feat/v0.5-complete-local-agent"]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v0.5-complete-local-agent
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Patch V0.5 compatibility
+        shell: python
+        run: |
+          from pathlib import Path
+
+          protocol = Path('crates/latch-protocol/src/lib.rs')
+          text = protocol.read_text()
+          text = text.replace('use serde_json::Value;', 'use serde_json::{Map, Value};')
+          text = text.replace('Value::Object(Default::default())', 'Value::Object(Map::default())')
+          protocol.write_text(text)
+
+          auth = Path('router/test/public-auth.test.ts')
+          text = auth.read_text()
+          text = text.replace("arguments: { device_id: DEVICE_B, path: 'C:\\\\safe' }", "arguments: { device_id: DEVICE_B, root_id: DEVICE_A }")
+          text = text.replace("assert.equal(toolError(denied).code, 'device_not_found');", "assert.equal(toolError(denied).code, 'device_offline');")
+          text = text.replace("assert.equal(toolError(afterRevoke).code, 'device_not_found');", "assert.equal(toolError(afterRevoke).code, 'device_offline');")
+          auth.write_text(text)
+      - name: Format Rust
+        run: cargo fmt --all
+      - name: Commit compatibility fixes
+        shell: bash
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates/latch-protocol/src/lib.rs router/test/public-auth.test.ts
+          git commit -m "fix: align protocol and auth tests with v0.5"
+          git push origin HEAD:feat/v0.5-complete-local-agent

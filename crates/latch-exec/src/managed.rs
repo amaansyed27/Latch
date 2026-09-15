@@ -1,10 +1,10 @@
 use std::{
     collections::HashMap,
-    io::Read,
+    io::{Read, Write},
     process::ExitStatus,
     sync::{Arc, Mutex, MutexGuard},
     thread::{self, JoinHandle},
-    time::Instant,
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
 use command_group::GroupChild;
@@ -13,11 +13,12 @@ use tracing::{info, instrument, warn};
 
 use crate::{
     process::{spawn_grouped, terminate_group},
-    CommandSpec, ExecError, ManagedOutput, ManagedStreamOutput, ProcessState, ProcessStatus,
-    ShutdownReport,
+    CommandSpec, ExecError, ManagedOutput, ManagedStreamOutput, ProcessPoll, ProcessStart,
+    ProcessState, ProcessStatus, ShutdownReport,
 };
 
 const MAX_STREAM_BYTES: usize = 1024 * 1024;
+const MAX_STDIN_BYTES: usize = 64 * 1024;
 
 type ProcessHandle = Arc<Mutex<ManagedProcess>>;
 
@@ -33,6 +34,16 @@ impl ProcessManager {
 
     #[instrument(skip(self, workspace, spec), fields(workspace_id = %workspace.id(), program = %spec.program))]
     pub fn start(&self, workspace: &Workspace, spec: &CommandSpec) -> Result<ProcessId, ExecError> {
+        self.start_detailed(workspace, spec)
+            .map(|started| started.process_id)
+    }
+
+    #[instrument(skip(self, workspace, spec), fields(workspace_id = %workspace.id(), program = %spec.program))]
+    pub fn start_detailed(
+        &self,
+        workspace: &Workspace,
+        spec: &CommandSpec,
+    ) -> Result<ProcessStart, ExecError> {
         let spawned = spawn_grouped(workspace, spec)?;
         let child = spawned.child;
 
@@ -45,17 +56,24 @@ impl ProcessManager {
         let os_pid = child.id();
         let process = ManagedProcess {
             child,
+            stdin: Some(spawned.stdin),
             started: Instant::now(),
             finished: None,
             stdout: stdout_buffer,
             stderr: stderr_buffer,
             stdout_reader: Some(stdout_reader),
             stderr_reader: Some(stderr_reader),
+            stdout_cursor: 0,
+            stderr_cursor: 0,
         };
 
         lock(&self.processes).insert(process_id, Arc::new(Mutex::new(process)));
         info!(%process_id, os_pid, "managed process started");
-        Ok(process_id)
+        Ok(ProcessStart {
+            process_id,
+            pid: os_pid,
+            started_at_ms: now_ms(),
+        })
     }
 
     pub fn status(&self, process_id: ProcessId) -> Result<ProcessStatus, ExecError> {
@@ -72,6 +90,61 @@ impl ProcessManager {
         let stderr = lock(&process.stderr).snapshot();
 
         Ok(ManagedOutput { stdout, stderr })
+    }
+
+    pub fn poll(&self, process_id: ProcessId) -> Result<ProcessPoll, ExecError> {
+        let handle = self.process(process_id)?;
+        let mut process = lock(&handle);
+        process.refresh(process_id)?;
+        let (stdout, next_stdout) = lock(&process.stdout).since(process.stdout_cursor);
+        let (stderr, next_stderr) = lock(&process.stderr).since(process.stderr_cursor);
+        process.stdout_cursor = next_stdout;
+        process.stderr_cursor = next_stderr;
+        Ok(ProcessPoll {
+            status: process.status(),
+            stdout,
+            stderr,
+        })
+    }
+
+    pub fn write_stdin(
+        &self,
+        process_id: ProcessId,
+        text: &str,
+        close_stdin: bool,
+    ) -> Result<(), ExecError> {
+        if text.len() > MAX_STDIN_BYTES {
+            return Err(ExecError::ProcessFailed {
+                message: format!("stdin payload exceeds {MAX_STDIN_BYTES} bytes"),
+                source: std::io::Error::new(std::io::ErrorKind::InvalidInput, "stdin too large"),
+            });
+        }
+        let handle = self.process(process_id)?;
+        let mut process = lock(&handle);
+        process.refresh(process_id)?;
+        if process.finished.is_some() {
+            return Err(ExecError::ProcessFailed {
+                message: format!("process {process_id} is not running"),
+                source: std::io::Error::new(std::io::ErrorKind::BrokenPipe, "process exited"),
+            });
+        }
+        if !text.is_empty() {
+            let stdin = process.stdin.as_mut().ok_or_else(|| ExecError::ProcessFailed {
+                message: format!("stdin for process {process_id} is closed"),
+                source: std::io::Error::new(std::io::ErrorKind::BrokenPipe, "stdin closed"),
+            })?;
+            stdin
+                .write_all(text.as_bytes())
+                .and_then(|()| stdin.flush())
+                .map_err(|source| ExecError::ProcessFailed {
+                    message: format!("could not write stdin for process {process_id}"),
+                    source,
+                })?;
+        }
+        if close_stdin {
+            process.stdin.take();
+        }
+        Ok(())
     }
 
     #[instrument(skip(self), fields(%process_id))]
@@ -140,12 +213,15 @@ impl Drop for ProcessManager {
 #[derive(Debug)]
 struct ManagedProcess {
     child: GroupChild,
+    stdin: Option<std::process::ChildStdin>,
     started: Instant,
     finished: Option<FinishedProcess>,
     stdout: Arc<Mutex<OutputBuffer>>,
     stderr: Arc<Mutex<OutputBuffer>>,
     stdout_reader: Option<JoinHandle<()>>,
     stderr_reader: Option<JoinHandle<()>>,
+    stdout_cursor: u64,
+    stderr_cursor: u64,
 }
 
 impl ManagedProcess {
@@ -163,6 +239,7 @@ impl ManagedProcess {
             })?;
 
         if let Some(status) = status {
+            self.stdin.take();
             self.finished = Some(FinishedProcess {
                 status,
                 elapsed: self.started.elapsed(),
@@ -176,6 +253,7 @@ impl ManagedProcess {
         let was_running = self.finished.is_none();
 
         if was_running {
+            self.stdin.take();
             let status =
                 terminate_group(&mut self.child, &format!("managed process {process_id}"))?;
             self.finished = Some(FinishedProcess {
@@ -222,6 +300,7 @@ struct FinishedProcess {
 #[derive(Debug, Default)]
 struct OutputBuffer {
     bytes: Vec<u8>,
+    dropped: u64,
     truncated: bool,
     complete: bool,
 }
@@ -229,6 +308,10 @@ struct OutputBuffer {
 impl OutputBuffer {
     fn append(&mut self, chunk: &[u8]) {
         if chunk.len() >= MAX_STREAM_BYTES {
+            let removed = self.bytes.len() + chunk.len() - MAX_STREAM_BYTES;
+            self.dropped = self
+                .dropped
+                .saturating_add(u64::try_from(removed).unwrap_or(u64::MAX));
             self.bytes.clear();
             self.bytes
                 .extend_from_slice(&chunk[chunk.len() - MAX_STREAM_BYTES..]);
@@ -240,6 +323,9 @@ impl OutputBuffer {
         if required > MAX_STREAM_BYTES {
             let remove = required - MAX_STREAM_BYTES;
             self.bytes.drain(..remove);
+            self.dropped = self
+                .dropped
+                .saturating_add(u64::try_from(remove).unwrap_or(u64::MAX));
             self.truncated = true;
         }
         self.bytes.extend_from_slice(chunk);
@@ -251,6 +337,23 @@ impl OutputBuffer {
             truncated: self.truncated,
             complete: self.complete,
         }
+    }
+
+    fn since(&self, cursor: u64) -> (ManagedStreamOutput, u64) {
+        let end = self
+            .dropped
+            .saturating_add(u64::try_from(self.bytes.len()).unwrap_or(u64::MAX));
+        let effective = cursor.max(self.dropped).min(end);
+        let offset = usize::try_from(effective.saturating_sub(self.dropped))
+            .unwrap_or(self.bytes.len());
+        (
+            ManagedStreamOutput {
+                text: String::from_utf8_lossy(&self.bytes[offset..]).into_owned(),
+                truncated: cursor < self.dropped,
+                complete: self.complete,
+            },
+            end,
+        )
     }
 }
 
@@ -292,6 +395,16 @@ fn join_reader(
         message: format!("{stream_name} reader for process {process_id} panicked"),
         source: std::io::Error::other("managed output reader thread panicked"),
     })
+}
+
+fn now_ms() -> u64 {
+    u64::try_from(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis(),
+    )
+    .unwrap_or(u64::MAX)
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {

@@ -66,11 +66,16 @@ pub(crate) fn reject_known_escape(workspace: &Workspace, relative: &Path) -> Res
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 cursor = path.parent();
             }
-            Err(_) => return Ok(()),
+            Err(error) => {
+                reject(relative);
+                return Err(FsError::from_io(relative.to_path_buf(), error));
+            }
         }
     }
 
-    Ok(())
+    Err(FsError::InvalidPath {
+        path: relative.to_path_buf(),
+    })
 }
 
 fn reject(path: &Path) {

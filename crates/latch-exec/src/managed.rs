@@ -84,10 +84,9 @@ impl ProcessManager {
     pub fn output(&self, process_id: ProcessId) -> Result<ManagedOutput, ExecError> {
         let handle = self.process(process_id)?;
         let process = lock(&handle);
-        Ok(ManagedOutput {
-            stdout: lock(&process.stdout).snapshot(),
-            stderr: lock(&process.stderr).snapshot(),
-        })
+        let stdout = lock(&process.stdout).snapshot();
+        let stderr = lock(&process.stderr).snapshot();
+        Ok(ManagedOutput { stdout, stderr })
     }
 
     pub fn poll(&self, process_id: ProcessId) -> Result<ProcessPoll, ExecError> {

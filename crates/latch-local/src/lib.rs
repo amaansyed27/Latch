@@ -23,6 +23,7 @@ pub struct ApprovedRoot {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct Permissions {
     pub files: bool,
     pub commands: bool,
@@ -69,7 +70,7 @@ pub struct McpServerConfig {
     pub allow_remote: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LocalConfig {
     #[serde(default)]
     pub paused: bool,
@@ -81,18 +82,6 @@ pub struct LocalConfig {
     pub roots: Vec<ApprovedRoot>,
     #[serde(default)]
     pub mcp_servers: Vec<McpServerConfig>,
-}
-
-impl Default for LocalConfig {
-    fn default() -> Self {
-        Self {
-            paused: false,
-            legacy_absolute_workspaces: false,
-            permissions: Permissions::default(),
-            roots: Vec::new(),
-            mcp_servers: Vec::new(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -351,8 +340,10 @@ pub fn validate_mcp_server(server: &McpServerConfig) -> Result<(), LocalError> {
 fn root_display_name(path: &Path) -> String {
     path.file_name()
         .filter(|name| !name.is_empty())
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| path.display().to_string())
+        .map_or_else(
+            || path.display().to_string(),
+            |name| name.to_string_lossy().into_owned(),
+        )
 }
 
 fn paths_equal(left: &Path, right: &Path) -> bool {

@@ -1,0 +1,60 @@
+name: V0.5 one-shot lint fixes
+
+on:
+  push:
+    branches: ["feat/v0.5-complete-local-agent"]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v0.5-complete-local-agent
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Apply targeted fixes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          protocol = Path('crates/latch-protocol/src/lib.rs')
+          text = protocol.read_text()
+          text = text.replace('use serde_json::Value;', 'use serde_json::{Map, Value};')
+          text = text.replace('Value::Object(Default::default())', 'Value::Object(Map::default())')
+          protocol.write_text(text)
+
+          mcp = Path('router/src/mcp-server.ts')
+          text = mcp.read_text()
+          old = """    async ({ device_id, server_id, tool_name, arguments }) =>
+      relayTool(config, coordinator, ready, principal, authorizationStore, 'latch:mcp:call', device_id, 'mcp.call', {
+        server_id,
+        tool_name,
+        arguments,
+      }),"""
+          new = """    async ({ device_id, server_id, tool_name, arguments: tool_arguments }) =>
+      relayTool(config, coordinator, ready, principal, authorizationStore, 'latch:mcp:call', device_id, 'mcp.call', {
+        server_id,
+        tool_name,
+        arguments: tool_arguments,
+      }),"""
+          if old not in text:
+              raise SystemExit('expected latch_mcp_call callback was not found')
+          mcp.write_text(text.replace(old, new, 1))
+
+          Path('.github/workflows/v05-known-fixes.yml').unlink()
+      - name: Format Rust
+        run: cargo fmt --all
+      - name: Commit fixes and self-remove
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates/latch-protocol/src/lib.rs router/src/mcp-server.ts .github/workflows/v05-known-fixes.yml
+          git commit -m "fix: clear v0.5 protocol and router lint failures"
+          git push origin HEAD:feat/v0.5-complete-local-agent

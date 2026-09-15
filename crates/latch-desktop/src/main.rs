@@ -76,8 +76,7 @@ mod windows_app {
             ])
             .setup(move |app| {
                 let open = MenuItemBuilder::with_id("open", "Open Latch").build(app)?;
-                let devices =
-                    MenuItemBuilder::with_id("devices", "Manage devices").build(app)?;
+                let devices = MenuItemBuilder::with_id("devices", "Manage devices").build(app)?;
                 let restart =
                     MenuItemBuilder::with_id("restart", "Restart connection").build(app)?;
                 let quit = MenuItemBuilder::with_id("quit", "Quit Latch").build(app)?;
@@ -200,10 +199,7 @@ mod windows_app {
         let Ok(device_id) = load_or_create_device_id(&path) else {
             return false;
         };
-        load_device_credential(device_id)
-            .ok()
-            .flatten()
-            .is_some()
+        load_device_credential(device_id).ok().flatten().is_some()
     }
 
     fn process_exists(pid: u32) -> bool {
@@ -234,9 +230,10 @@ mod windows_app {
             }
         }
 
-        let fallback_name = config
-            .as_ref()
-            .map_or_else(|| "This computer".to_owned(), |value| value.device_name().to_owned());
+        let fallback_name = config.as_ref().map_or_else(
+            || "This computer".to_owned(),
+            |value| value.device_name().to_owned(),
+        );
         let fallback_router = config
             .as_ref()
             .and_then(|value| value.router_url().host_str())
@@ -244,9 +241,10 @@ mod windows_app {
             .to_owned();
 
         DesktopStatus {
-            version: file
-                .as_ref()
-                .map_or_else(|| env!("CARGO_PKG_VERSION").to_owned(), |value| value.version.clone()),
+            version: file.as_ref().map_or_else(
+                || env!("CARGO_PKG_VERSION").to_owned(),
+                |value| value.version.clone(),
+            ),
             device_name: file
                 .as_ref()
                 .map_or(fallback_name, |value| value.device_name.clone()),
@@ -284,14 +282,14 @@ mod windows_app {
 
         let _ = run_cli(&["stop"]);
         run_cli(&["start", "--startup"])?;
-        tauri::async_runtime::sleep(Duration::from_millis(900)).await;
+        tokio::time::sleep(Duration::from_millis(900)).await;
         Ok(status_snapshot())
     }
 
     #[tauri::command]
     async fn restart() -> Result<DesktopStatus, String> {
         run_cli(&["restart"])?;
-        tauri::async_runtime::sleep(Duration::from_millis(700)).await;
+        tokio::time::sleep(Duration::from_millis(700)).await;
         Ok(status_snapshot())
     }
 

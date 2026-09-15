@@ -822,7 +822,7 @@ function localMcpSuccess(value: Record<string, unknown>) {
         content.push({
           type: 'image',
           data: block.data,
-          mimeType: typeof block.mimeType === 'string' ? block.mimeType : block.mime_type,
+          mimeType: typeof block.mimeType === 'string' ? block.mimeType : String(block.mime_type),
         });
       }
     }

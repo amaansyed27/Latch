@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  AppWindow,
   ArrowRight,
   Check,
   CheckCircle2,
   Download,
   Monitor,
-  Terminal,
 } from "lucide-react";
 import { DOWNLOAD, message, request, type Device } from "../lib/api";
 import { CopyButton, Modal, Spinner } from "./ui";
@@ -27,6 +27,7 @@ export default function Pairing({
   const [error, setError] = useState("");
   const [connected, setConnected] = useState<Device | null>(null);
   const previous = useRef(new Set(existing.map((d) => d.deviceId)));
+
   async function generate() {
     setBusy(true);
     setError("");
@@ -45,6 +46,7 @@ export default function Pairing({
       setBusy(false);
     }
   }
+
   useEffect(() => {
     if (!expires || connected) return;
     const timer = setInterval(
@@ -53,6 +55,7 @@ export default function Pairing({
     );
     return () => clearInterval(timer);
   }, [expires, connected]);
+
   useEffect(() => {
     if (step !== 2 || !seconds) return;
     let cancelled = false;
@@ -83,7 +86,8 @@ export default function Pairing({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [step, Boolean(seconds)]);
+  }, [step, seconds, onPaired]);
+
   return (
     <Modal
       open
@@ -92,7 +96,7 @@ export default function Pairing({
       description={
         step === 3
           ? "Your computer is now available to Latch."
-          : "A secure connection, in three simple steps."
+          : "Install Latch, pair once, and it stays available from your tray."
       }
     >
       <div
@@ -106,15 +110,16 @@ export default function Pairing({
           </span>
         ))}
       </div>
+
       {step === 0 ? (
         <div className="pair-step">
           <span className="big-icon">
             <Monitor size={38} />
           </span>
-          <h3>Start with Latch for Windows.</h3>
+          <h3>Install Latch for Windows.</h3>
           <p>
-            Install the app on the computer you want to connect. It runs quietly
-            in the background.
+            The desktop app lives in your system tray, starts after sign-in, and
+            reconnects automatically.
           </p>
           <a className="button primary full" href={DOWNLOAD}>
             <Download size={18} />
@@ -129,12 +134,12 @@ export default function Pairing({
       ) : step === 1 ? (
         <div className="pair-step">
           <span className="big-icon">
-            <Terminal size={34} />
+            <AppWindow size={34} />
           </span>
-          <h3>Give this computer an invitation.</h3>
+          <h3>Pair through the Latch app.</h3>
           <p>
-            We’ll create a command to run in Windows Terminal. The code works
-            once and expires in 10 minutes.
+            We’ll create a one-time code. Open Latch from the Start menu or tray
+            and paste it into the setup screen.
           </p>
           <button
             className="button primary full"
@@ -146,11 +151,14 @@ export default function Pairing({
         </div>
       ) : step === 2 ? (
         <div className="pair-step">
-          <h3>Run this on your computer.</h3>
-          <p>Open Windows Terminal and paste the command below.</p>
+          <h3>Paste this code into Latch.</h3>
+          <p>
+            Open the Latch tray app on this computer, paste the code below, and
+            choose <strong>Pair this computer</strong>.
+          </p>
           <div className="code-box">
-            <code>latch pair {code}</code>
-            <CopyButton value={`latch pair ${code}`} label="Command" />
+            <code>{code}</code>
+            <CopyButton value={code} label="Pairing code" />
           </div>
           <span className="expiry">
             Expires in{" "}
@@ -162,7 +170,7 @@ export default function Pairing({
           {seconds ? (
             <p className="waiting" role="status">
               <Spinner />
-              Waiting for your computer…
+              Waiting for the Latch app…
             </p>
           ) : (
             <>
@@ -175,10 +183,10 @@ export default function Pairing({
             </>
           )}
           <details>
-            <summary>Command not found?</summary>
+            <summary>Prefer the command line?</summary>
             <p>
-              Close and reopen Terminal after installation, then try again. Make
-              sure Latch is installed for this Windows user.
+              The desktop app is recommended. As a fallback, open Windows
+              Terminal and run <code>latch pair {code}</code>.
             </p>
           </details>
         </div>
@@ -189,8 +197,8 @@ export default function Pairing({
           </span>
           <h3>{connected?.deviceName}</h3>
           <p>
-            You’re connected. Next, authorize Latch in ChatGPT or your preferred
-            MCP client.
+            You’re connected. Latch can now stay in the tray while you authorize
+            it in ChatGPT or another MCP client.
           </p>
           <button className="button primary full" onClick={onClose}>
             Done
@@ -198,6 +206,7 @@ export default function Pairing({
           </button>
         </div>
       )}
+
       {error && (
         <p role="alert" className="error-message">
           {error}

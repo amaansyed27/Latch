@@ -8,7 +8,7 @@ import type { RouterConfig } from './config.js';
 import type { RelayCoordinator } from './coordinator.js';
 import { allowRequest } from './rate-limit.js';
 import { isUuid } from './validation.js';
-import { escapeHtml, renderAuthorization, renderError, renderPage, safeReturnTo, serveAsset } from './web-ui.js';
+import { renderAuthorization, renderError, renderPage, safeReturnTo, serveAsset } from './web-ui.js';
 
 const MAX_BODY = 32 * 1024;
 
@@ -99,7 +99,7 @@ async function handleOAuth(request: IncomingMessage, response: ServerResponse, c
     }
     if (request.method === 'GET') {
       const online = new Set((await coordinator.listDevices()).filter((device) => device.owner_user_id === userId).map((device) => device.device_id));
-      json(response, 200, { devices: (await store.listDevices(userId)).map((device) => ({ ...device, online: online.has(device.deviceId) })) });
+      json(response, 200, { devices: (await store.listDevices(userId)).map((device) => ({ deviceId: device.deviceId, deviceName: device.deviceName, pairedAt: device.pairedAt, online: online.has(device.deviceId) })) });
       return;
     }
     if (request.method === 'DELETE') {
@@ -115,9 +115,9 @@ async function handleOAuth(request: IncomingMessage, response: ServerResponse, c
     await proxyNeonAuth(request, response, url, config.neonAuthBaseUrl);
     return;
   }
-  if (request.method === 'GET' && ['/', '/login', '/signup', '/account', '/forgot-password', '/reset-password', '/devices', '/download', '/privacy', '/terms', '/support', '/security'].includes(url.pathname)) {
+  if (request.method === 'GET' && ['/', '/login', '/signup', '/account', '/forgot-password', '/reset-password', '/dashboard', '/connect-chatgpt', '/devices', '/download', '/privacy', '/terms', '/support', '/security'].includes(url.pathname)) {
     const identity = await neonSession(request.headers, config.neonAuthBaseUrl);
-    if ((url.pathname === '/devices' || url.pathname === '/account') && !identity) {
+    if (['/devices', '/account', '/dashboard'].includes(url.pathname) && !identity) {
       response.statusCode = 302; response.setHeader('location', `/login?return_to=${encodeURIComponent(url.pathname)}`); response.end(); return;
     }
     if ((url.pathname === '/login' || url.pathname === '/signup') && identity) {
@@ -158,8 +158,7 @@ async function authorize(request: IncomingMessage, response: ServerResponse, url
   if (request.method === 'GET') {
     const csrf = randomSecret(24);
     response.setHeader('set-cookie', `__Host-latch_csrf=${csrf}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`);
-    const hidden = [...url.searchParams].map(([name, value]) => `<input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(value)}">`).join('');
-    renderAuthorization(response, hidden, scopes, csrf, identity);
+    renderAuthorization(response, Object.fromEntries(url.searchParams), scopes, csrf, identity);
     return;
   }
   const csrfCookie = /(?:^|;\s*)__Host-latch_csrf=([^;]+)/.exec(request.headers.cookie ?? '')?.[1];

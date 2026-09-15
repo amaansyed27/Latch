@@ -49,6 +49,8 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:web
 
   remote-e2e:
     name: Router to local engine E2E

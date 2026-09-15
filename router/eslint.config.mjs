@@ -4,7 +4,7 @@ import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**'],
+    ignores: ['dist/**', 'public/**', 'web/test-results/**', 'web/playwright-report/**'],
   },
   {
     ...js.configs.recommended,
@@ -13,10 +13,11 @@ export default tseslint.config(
     },
   },
   ...tseslint.configs.recommended,
+  { files: ['web/**/*.js'], languageOptions: { globals: globals.browser } },
   {
-    files: ['**/*.ts'],
+    files: ['**/*.ts', '**/*.tsx'],
     languageOptions: {
-      globals: globals.node,
+      globals: { ...globals.node, ...globals.browser },
     },
     rules: {
       '@typescript-eslint/no-explicit-any': 'error',

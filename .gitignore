@@ -4,6 +4,11 @@
 .DS_Store
 /router/node_modules
 /router/dist
+/router/public
+/router/web/test-results
+/router/web/playwright-report
+/router/test-results
+/output/playwright
 /router/.env*
 !/router/.env.example
 .vercel

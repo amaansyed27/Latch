@@ -1,11 +1,13 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "buildCommand": "",
+  "buildCommand": "npm run build",
+  "outputDirectory": "public",
   "fluid": true,
   "functions": {
     "api/router.ts": {
-      "maxDuration": 300
+      "maxDuration": 300,
+      "includeFiles": "public/**"
     }
   },
   "rewrites": [
@@ -14,7 +16,7 @@
       "destination": "/api/router?latch_public_path=/"
     },
     {
-      "source": "/:page(login|signup|account|forgot-password|reset-password|devices|download|privacy|terms|support|security)",
+      "source": "/:page(login|signup|account|forgot-password|reset-password|dashboard|connect-chatgpt|devices|download|privacy|terms|support|security)",
       "destination": "/api/router?latch_public_path=/:page"
     },
     {

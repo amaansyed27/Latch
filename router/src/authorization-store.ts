@@ -21,6 +21,7 @@ export interface OwnedDevice {
   deviceId: string;
   ownerUserId: string;
   deviceName: string;
+  pairedAt?: string;
 }
 
 export interface AuthorizationStore {
@@ -106,13 +107,13 @@ export class PostgresAuthorizationStore implements AuthorizationStore {
   }
 
   async authenticateDevice(deviceId: string, credential: string): Promise<OwnedDevice | null> {
-    const rows = await this.#sql`SELECT device_id::text, owner_user_id::text, device_name
+    const rows = await this.#sql`SELECT device_id::text, owner_user_id::text, device_name, created_at
       FROM latch_devices WHERE device_id = ${deviceId} AND credential_hash = ${hash(credential)} AND revoked_at IS NULL`;
     return deviceRow(rows[0]);
   }
 
   async listDevices(userId: string): Promise<OwnedDevice[]> {
-    const rows = await this.#sql`SELECT device_id::text, owner_user_id::text, device_name
+    const rows = await this.#sql`SELECT device_id::text, owner_user_id::text, device_name, created_at
       FROM latch_devices WHERE owner_user_id = ${userId} AND revoked_at IS NULL ORDER BY device_name`;
     return rows.map(deviceRow).filter((row): row is OwnedDevice => row !== null);
   }
@@ -233,7 +234,7 @@ export class MemoryAuthorizationStore implements AuthorizationStore {
     const existing = this.#devices.get(deviceId);
     if (existing && existing.ownerUserId !== record.userId) return null;
     const credential = randomSecret(32);
-    this.#devices.set(deviceId, { deviceId, ownerUserId: record.userId, deviceName, credentialHash: hash(credential), revoked: false });
+    this.#devices.set(deviceId, { deviceId, ownerUserId: record.userId, deviceName, pairedAt: existing?.pairedAt ?? new Date(this.now()).toISOString(), credentialHash: hash(credential), revoked: false });
     return credential;
   }
   async authenticateDevice(deviceId: string, credential: string): Promise<OwnedDevice | null> {
@@ -271,7 +272,7 @@ export class MemoryAuthorizationStore implements AuthorizationStore {
 }
 
 function deviceRow(row: Record<string, unknown> | undefined): OwnedDevice | null {
-  return row ? { deviceId: String(row.device_id), ownerUserId: String(row.owner_user_id), deviceName: String(row.device_name) } : null;
+  return row ? { deviceId: String(row.device_id), ownerUserId: String(row.owner_user_id), deviceName: String(row.device_name), ...(row.created_at ? { pairedAt: new Date(String(row.created_at)).toISOString() } : {}) } : null;
 }
 
 export function hash(value: string): string {

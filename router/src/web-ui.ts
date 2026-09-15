@@ -1,63 +1,101 @@
-import type { ServerResponse } from 'node:http';
-import { CSS, JS } from './web-assets.js';
+import { existsSync, readFileSync } from "node:fs";
+import { resolve, extname } from "node:path";
+import type { ServerResponse } from "node:http";
 
-export interface WebIdentity { id: string; email?: string }
-const pages: Record<string, [string, string, string]> = {
-  '/': ['Your local machine, inside ChatGPT.', 'Latch', 'Use the computer you already own through a secure, outbound-only connection.'],
-  '/signup': ['Create your account', 'Private beta', 'One account keeps your computers and authorizations under your control.'],
-  '/login': ['Welcome back', 'Account', 'Sign in to manage your computers or continue authorization.'],
-  '/account': ['Your account', 'Account', 'Your current Latch session.'],
-  '/forgot-password': ['Reset your password', 'Account recovery', 'Request a secure reset link from Latch authentication.'],
-  '/reset-password': ['Choose a new password', 'Account recovery', 'Complete the password reset from your email.'],
-  '/devices': ['Your computers', 'Device access', 'Pair, check, and revoke the computers Latch can reach.'],
-  '/download': ['Latch for Windows', 'Private beta', 'Install once, pair this computer, and let Latch reconnect automatically.'],
-  '/privacy': ['Privacy', 'Plain language', 'What Latch keeps, what passes through, and what stays on your computer.'],
-  '/terms': ['Terms', 'Pre-release', 'Short terms for the open-source private beta.'],
-  '/support': ['Support', 'Get unstuck', 'Troubleshooting and safe ways to report a problem.'],
-  '/security': ['Security model', 'Know the boundary', 'File tools stay inside a workspace. Commands are deliberately more powerful.'],
-};
-
-export function renderPage(response: ServerResponse, path: string, authReady: boolean, returnTo: string | null, identity: WebIdentity | null): void {
-  const page = pages[path];
-  if (!page) return renderError(response, 404, 'Page not found', 'The page you requested does not exist.', identity);
-  const content = path === '/' ? home(identity) : path === '/login' ? login(authReady) : path === '/signup' ? signup(authReady) : path === '/account' ? account(identity) : path === '/forgot-password' ? forgot(authReady) : path === '/reset-password' ? reset(authReady) : path === '/devices' ? devices(authReady) : path === '/download' ? download() : document(path);
-  html(response, 200, shell(page[0], page[1], page[2], content, safeReturnTo(returnTo), identity));
+export interface WebIdentity {
+  id: string;
+  email?: string;
 }
-
-export function renderAuthorization(response: ServerResponse, hidden: string, scopes: string[], csrf: string, identity: WebIdentity): void {
-  const labels: Record<string, string> = { 'latch:devices:read': 'See connected computers', 'latch:workspace:open': 'Open a local workspace', 'latch:files:read': 'Read files inside that workspace', 'latch:exec:run': 'Run commands on your computer' };
-  const list = scopes.map((scope) => `<li class="${scope === 'latch:exec:run' ? 'warning' : ''}"><span>${scope === 'latch:exec:run' ? '!' : '✓'}</span>${escapeHtml(labels[scope] ?? scope)}</li>`).join('');
-  const content = `<section class="panel consent"><p class="account-line">Signed in as <strong>${escapeHtml(identity.email ?? 'Latch user')}</strong></p><h2>Requested access</h2><ul class="scope-list">${list}</ul><div class="notice warning"><strong>Commands are not sandboxed.</strong> They run with your Windows user permissions.</div><form method="post" action="/oauth/authorize">${hidden}<input type="hidden" name="csrf" value="${escapeHtml(csrf)}"><div class="actions"><button class="primary" name="approve" value="yes">Allow</button><button name="approve" value="no">Cancel</button></div></form></section>`;
-  html(response, 200, shell('ChatGPT wants to use Latch', 'Authorization', 'Review exactly what this connection can do.', content, '/devices', identity));
+const publicRoot = resolve(
+  process.cwd(),
+  existsSync("public/index.html") ? "public" : "router/public",
+);
+const template = (): string =>
+  readFileSync(resolve(publicRoot, "index.html"), "utf8");
+export function safeReturnTo(value: string | null): string {
+  return value &&
+    value.startsWith("/") &&
+    !value.startsWith("//") &&
+    !value.includes("\\")
+    ? value
+    : "/dashboard";
 }
-
-export function renderError(response: ServerResponse, status: number, title: string, message: string, identity: WebIdentity | null = null): void { html(response, status, shell(title, 'Latch', message, `<section class="panel narrow"><a class="button" href="/">Return home</a></section>`, '/', identity)); }
-export function serveAsset(response: ServerResponse, path: string): boolean { if (path === '/assets/latch.css') { response.setHeader('content-type', 'text/css; charset=utf-8'); response.end(CSS); return true; } if (path === '/assets/latch.js') { response.setHeader('content-type', 'text/javascript; charset=utf-8'); response.end(JS); return true; } if (path === '/assets/favicon.svg') { response.setHeader('content-type', 'image/svg+xml'); response.end(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="4" fill="#1d1c19"/><path d="M9 7v18h14v-4H13V7z" fill="#f3efe5"/></svg>`); return true; } return false; }
-export function escapeHtml(value: string): string { return value.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!); }
-export function safeReturnTo(value: string | null): string { return value && value.startsWith('/') && !value.startsWith('//') && !value.includes('\\') ? value : '/devices'; }
-function html(response: ServerResponse, status: number, body: string): void { response.statusCode = status; response.setHeader('content-type', 'text/html; charset=utf-8'); response.end(body); }
-
-function shell(title: string, eyebrow: string, body: string, content: string, returnTo: string, identity: WebIdentity | null): string {
-  const links = identity ? `<a href="/devices">Devices</a><a href="/download">Download</a><a href="/security">Security</a>` : `<a href="/#how">How it works</a><a href="/security">Security</a><a href="/download">Download</a>`;
-  const session = identity ? `<details class="account-menu"><summary>${escapeHtml(identity.email ?? 'Account')}</summary><div><a href="/account">Account</a><button id="sign-out" type="button">Sign out</button></div></details>` : `<a href="/login">Sign in</a><a class="nav-cta" href="/signup">Create account</a>`;
-  return `<!doctype html><html lang="en" data-return-to="${escapeHtml(returnTo)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>${escapeHtml(title)} · Latch</title><link rel="icon" href="/assets/favicon.svg"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;650&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet"><link rel="stylesheet" href="/assets/latch.css"><script src="/assets/latch.js" defer></script></head><body><header><a class="brand" href="/">LATCH<span>↗</span></a><nav aria-label="Main navigation">${links}</nav><nav class="session-nav" aria-label="Account navigation">${session}</nav></header><main><div class="intro"><p class="eyebrow">${escapeHtml(eyebrow)}</p><h1>${escapeHtml(title)}</h1><p class="lede">${escapeHtml(body)}</p></div>${content}</main><footer><span>Local compute. Explicit access.</span><nav aria-label="Legal"><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/support">Support</a></nav></footer></body></html>`;
+export function renderPage(
+  response: ServerResponse,
+  _path: string,
+  authReady: boolean,
+  returnTo: string | null,
+  identity: WebIdentity | null,
+): void {
+  send(response, 200, {
+    identity,
+    authReady,
+    returnTo: safeReturnTo(returnTo),
+  });
 }
-
-function home(identity: WebIdentity | null): string { const cta = identity ? `<a class="button primary" href="/devices">Manage devices</a>` : `<a class="button primary" href="/download">Download for Windows</a><a class="button" href="/signup">Create account</a>`; return `<div class="actions">${cta}</div><section id="how" class="flow"><div><span>01</span><strong>ChatGPT / MCP</strong><small>asks to use an approved tool</small></div><b>→</b><div><span>02</span><strong>Latch</strong><small>routes the request securely</small></div><b>→</b><div><span>03</span><strong>Your computer</strong><small>does the work locally</small></div></section><section class="principles"><h2>Use the compute you own</h2><div class="grid"><article><h3>Outbound only</h3><p>Your computer initiates the encrypted connection. No exposed localhost.</p></article><article><h3>Files stay local</h3><p>Project files are not durably stored by the relay.</p></article><article><h3>Explicit pairing</h3><p>Each computer has a separate revocable credential.</p></article><article><h3>Private beta</h3><p>Ready for personal testing on Windows 10/11 x64.</p></article></div></section>`; }
-function authForm(id: string, submit: string, fields: string, footer: string): string { return `<section class="panel narrow"><form id="${id}" novalidate>${fields}<p id="form-status" class="status" role="status" aria-live="polite"></p><button class="primary" type="submit">${submit}</button></form><p class="form-footer">${footer}</p></section>`; }
-function emailField(): string { return `<label>Email<input name="email" type="email" autocomplete="email" required></label>`; }
-function passwordField(name: string, label: string, autocomplete: string): string { return `<label>${label}<span class="password"><input name="${name}" type="password" autocomplete="${autocomplete}" minlength="8" required><button class="toggle-password" type="button">Show</button></span></label>`; }
-function login(ready: boolean): string { return ready ? authForm('login-form', 'Sign in', emailField()+passwordField('password','Password','current-password'), `New to Latch? <a href="/signup">Create account</a><br><a href="/forgot-password">Forgot password?</a>`) : unavailable(); }
-function signup(ready: boolean): string { return ready ? authForm('signup-form', 'Create account', emailField()+passwordField('password','Password','new-password')+passwordField('confirm_password','Confirm password','new-password'), `Already have an account? <a href="/login">Sign in</a>`) : unavailable(); }
-function forgot(ready: boolean): string { return ready ? authForm('forgot-form', 'Send reset link', emailField(), `Remembered it? <a href="/login">Sign in</a>`) : unavailable(); }
-function reset(ready: boolean): string { return ready ? authForm('reset-form', 'Update password', passwordField('password','New password','new-password')+passwordField('confirm_password','Confirm password','new-password'), `Return to <a href="/login">sign in</a>`) : unavailable(); }
-function unavailable(): string { return `<div class="notice">Authentication is temporarily unavailable. Please try again later.</div>`; }
-function account(identity: WebIdentity | null): string { return `<section class="panel narrow"><h2>Account</h2><dl><dt>Email</dt><dd>${escapeHtml(identity?.email ?? 'Unavailable')}</dd><dt>Status</dt><dd>Active</dd></dl><button id="account-sign-out">Sign out</button></section>`; }
-function devices(ready: boolean): string { return ready ? `<section class="device-layout"><div class="panel"><div class="section-head"><div><h2>Paired computers</h2><p>Online means Latch is connected right now.</p></div><button id="refresh-devices">Refresh</button></div><p id="device-status" class="status" role="status" aria-live="polite">Loading computers…</p><div id="device-list" class="device-list"></div></div><aside class="panel"><p class="eyebrow">Add a computer</p><ol><li><a href="/download">Download and install Latch</a>.</li><li>Generate a one-time code.</li><li>Open Terminal and run the command.</li></ol><button id="create-pairing" class="primary">Generate pairing code</button><div id="pairing" class="pairing" hidden><code id="pair-command"></code><button id="copy-pairing">Copy command</button><p id="pair-wait" class="status">Waiting for this computer…</p><small>Expires in 10 minutes and works once.</small></div></aside></section>` : unavailable(); }
-function download(): string { return `<section class="panel download"><p class="eyebrow">Version 0.4.2-beta.1</p><h2>Windows 10/11 · x64</h2><p>Per-user installation. No Rust, Cargo, administrator account, or repository clone required.</p><a class="button primary" href="https://github.com/amaansyed27/Latch/releases/download/v0.4.2-beta.1/LatchSetup-x64.msi">Download MSI</a><ol class="steps"><li><strong>Download</strong><span>Get the private beta MSI.</span></li><li><strong>Install</strong><span>Latch starts for your Windows user.</span></li><li><strong>Pair</strong><span>Create a code on Devices.</span></li></ol><div class="notice"><strong>Private beta:</strong> unsigned installer; Windows SmartScreen may warn.</div></section>`; }
-function document(path: string): string {
-  if (path === '/security') return `<section class="prose"><h2>The important distinction</h2><h3>Filesystem operations are workspace-confined</h3><p>File tools accept relative paths inside an opened workspace. Traversal and link escapes are rejected.</p><h3>Commands are not sandboxed</h3><p><strong>Commands run with the full permissions of the OS user running Latch.</strong></p><h2>Connection and authorization</h2><ul><li>Outbound TLS connection.</li><li>Unique OS-protected device credentials.</li><li>Scoped, refreshable, revocable OAuth grants.</li></ul></section>`;
-  if (path === '/privacy') return `<section class="prose"><h2>What is stored</h2><p>Account, device, and authorization metadata, including hashed credentials and tokens.</p><h2>What is not durably stored</h2><p>Source code, files, command output, conversations, and project contents.</p><h2>Routing</h2><p>Redis holds ephemeral routing state. Neon holds durable account and authorization metadata.</p></section>`;
-  if (path === '/terms') return `<section class="prose"><h2>Pre-release software</h2><p>Latch is experimental open-source software provided without warranty, to the extent permitted by law.</p><h2>Your responsibility</h2><p>You are responsible for devices paired and commands authorized.</p><h2>Acceptable use</h2><p>Do not access systems without permission or cause harm.</p></section>`;
-  return `<section class="prose"><h2>Start here</h2><p>Read the <a href="https://github.com/amaansyed27/Latch#readme">setup guide</a> and <a href="/security">security boundary</a>.</p><h2>Report a problem</h2><p>Open a <a href="https://github.com/amaansyed27/Latch/issues">GitHub Issue</a> with non-sensitive details.</p><div class="notice"><strong>Never paste credentials, tokens, pairing codes, or database URLs.</strong></div></section>`;
+export function renderAuthorization(
+  response: ServerResponse,
+  params: Record<string, string>,
+  scopes: string[],
+  csrf: string,
+  identity: WebIdentity,
+): void {
+  send(response, 200, {
+    identity,
+    authReady: true,
+    returnTo: "/dashboard",
+    authorization: { params, scopes, csrf },
+  });
+}
+export function renderError(
+  response: ServerResponse,
+  status: number,
+  title: string,
+  message: string,
+  identity: WebIdentity | null = null,
+): void {
+  send(response, status, {
+    identity,
+    authReady: true,
+    returnTo: "/dashboard",
+    error: { title, message },
+  });
+}
+function send(response: ServerResponse, status: number, data: unknown): void {
+  const serialized = JSON.stringify(data)
+    .replace(/</g, "\\u003c")
+    .replace(/>/g, "\\u003e")
+    .replace(/&/g, "\\u0026");
+  response.statusCode = status;
+  response.setHeader("content-type", "text/html; charset=utf-8");
+  response.end(
+    template().replace(
+      "<!--latch-bootstrap-->",
+      `<script id="latch-bootstrap" type="application/json">${serialized}</script>`,
+    ),
+  );
+}
+export function serveAsset(response: ServerResponse, path: string): boolean {
+  if (!/^\/(?:assets\/[a-zA-Z0-9._-]+|favicon\.svg|theme\.js)$/.test(path))
+    return false;
+  const file = resolve(publicRoot, `.${path}`);
+  if (!existsSync(file)) return false;
+  const type: Record<string, string> = {
+    ".css": "text/css",
+    ".js": "text/javascript",
+    ".svg": "image/svg+xml",
+    ".woff2": "font/woff2",
+  };
+  response.setHeader(
+    "content-type",
+    type[extname(file)] || "application/octet-stream",
+  );
+  response.setHeader(
+    "cache-control",
+    path.startsWith("/assets/")
+      ? "public, max-age=31536000, immutable"
+      : "public, max-age=300",
+  );
+  response.end(readFileSync(file));
+  return true;
 }

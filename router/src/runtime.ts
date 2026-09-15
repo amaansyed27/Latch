@@ -34,7 +34,7 @@ export function createRouterRuntime(
     }
     if (url.pathname === '/mcp' || url.searchParams.has('latch_mcp')) {
       mcpHandler(request, response);
-    } else if (oauthHandler && (url.pathname.startsWith('/oauth/') || url.pathname.startsWith('/.well-known/') || url.pathname.startsWith('/api/auth/') || url.pathname.startsWith('/api/pairing/') || url.pathname.startsWith('/assets/') || url.pathname === '/api/my/devices' || ['/','/login','/signup','/account','/forgot-password','/reset-password','/devices','/download','/privacy','/terms','/support','/security'].includes(url.pathname) || (request.method === 'GET' && request.headers.accept?.includes('text/html')))) {
+    } else if (oauthHandler && (url.pathname.startsWith('/oauth/') || url.pathname.startsWith('/.well-known/') || url.pathname.startsWith('/api/auth/') || url.pathname.startsWith('/api/pairing/') || url.pathname.startsWith('/assets/') || url.pathname === '/api/my/devices' || ['/','/login','/signup','/account','/forgot-password','/reset-password','/dashboard','/connect-chatgpt','/devices','/download','/privacy','/terms','/support','/security','/favicon.svg','/theme.js'].includes(url.pathname) || (request.method === 'GET' && request.headers.accept?.includes('text/html')))) {
       oauthHandler(request, response);
     } else {
       httpHandler(request, response);

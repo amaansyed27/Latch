@@ -63,7 +63,7 @@ export function DownloadPage() {
       <ol className="download-steps">
         {[
           ["Download", "Save the MSI to your computer."],
-          ["Install", "Run the installer, then open a new Terminal."],
+          ["Install", "Run the installer, then open Latch from the Start menu."],
           ["Pair", "Sign in to Latch and select Add computer."],
         ].map(([title, copy], i) => (
           <li key={title}>
@@ -87,7 +87,7 @@ const help: Record<string, string> = {
   "Computer offline":
     "Make sure your computer is awake and connected to the internet. Open Terminal and run latch status. Use latch start to reconnect, or latch restart if a connection is stuck.",
   "Pairing failed":
-    "Pairing codes work once and expire after 10 minutes. Generate a fresh code in Devices, then paste the full command into Windows Terminal.",
+    "Pairing codes work once and expire after 10 minutes. Generate a fresh code in Devices, then open Latch from the Start menu or tray and paste the code into Latch Desktop. The CLI remains available as a fallback.",
   "Latch command not found":
     "Close and reopen Terminal after installing Latch so it can pick up your updated PATH. If it is still unavailable, reinstall Latch for your current Windows account.",
   "SmartScreen warning":

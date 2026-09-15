@@ -224,15 +224,19 @@ fn daemon_exercises_v05_protocol_across_process_boundary() {
         other => panic!("unexpected exec.start response: {other:?}"),
     };
 
-    match success(daemon.request("6", "exec.poll", &json!({"job_id": job_id}))) {
+    let mut saw_ready = match success(daemon.request("6", "exec.poll", &json!({"job_id": job_id})))
+    {
         ResponsePayload::ProcessPoll(response) => {
             assert!(matches!(response.state, ProcessStateResponse::Running));
+            response.stdout.text.contains("ready")
         }
         other => panic!("unexpected exec.poll response: {other:?}"),
-    }
+    };
 
-    let mut saw_ready = false;
     for attempt in 0..20 {
+        if saw_ready {
+            break;
+        }
         match success(daemon.request(
             &format!("poll-{attempt}"),
             "exec.poll",
@@ -278,7 +282,7 @@ fn daemon_reports_transport_protocol_errors() {
     assert_eq!(malformed.code, ErrorCode::InvalidRequest);
 
     let unsupported = error(daemon.send_value(&json!({
-        "id": "bad-version",
+        "id": "unsupported",
         "version": PROTOCOL_VERSION + 1,
         "method": "roots.list",
         "params": {}
@@ -298,7 +302,7 @@ fn daemon_shutdown_terminates_managed_processes() {
     let mut daemon = DaemonClient::start_with_state_dir(&state_dir);
 
     let workspace_id = match success(daemon.request(
-        "1",
+        "shutdown-open",
         "workspace.open",
         &json!({"root_id": root.root_id, "relative_path": "."}),
     )) {
@@ -306,14 +310,17 @@ fn daemon_shutdown_terminates_managed_processes() {
         other => panic!("unexpected workspace response: {other:?}"),
     };
 
-    assert!(matches!(
-        success(daemon.request("2", "exec.start", &delayed_marker_request(workspace_id),)),
-        ResponsePayload::ProcessStarted(_)
-    ));
+    let _job_id = match success(daemon.request(
+        "shutdown-start",
+        "exec.start",
+        &delayed_marker_request(workspace_id),
+    )) {
+        ResponsePayload::ProcessStarted(response) => response.job_id,
+        other => panic!("unexpected exec.start response: {other:?}"),
+    };
 
     assert!(daemon.shutdown().success());
-    thread::sleep(Duration::from_secs(1));
-
+    thread::sleep(Duration::from_millis(1_100));
     assert!(
         !marker.exists(),
         "managed process survived daemon shutdown and wrote its marker"

@@ -1,0 +1,49 @@
+name: V0.5 CI follow-up fix
+
+on:
+  push:
+    branches: ["feat/v0.5-complete-local-agent"]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v0.5-complete-local-agent
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Apply fixes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          p = Path('crates/latch-exec/src/lib.rs')
+          s = p.read_text()
+          old = 'pub use runner::run_blocking;'
+          new = 'pub use runner::{run_blocking, run_blocking_with_options};'
+          if old not in s:
+              raise SystemExit('runner export target missing')
+          p.write_text(s.replace(old, new, 1))
+
+          p = Path('router/src/mcp-server.ts')
+          s = p.read_text()
+          old = "mimeType: typeof block.mimeType === 'string' ? block.mimeType : block.mime_type,"
+          new = "mimeType: typeof block.mimeType === 'string' ? block.mimeType : String(block.mime_type),"
+          if old not in s:
+              raise SystemExit('MCP mime type target missing')
+          p.write_text(s.replace(old, new, 1))
+      - name: Format and commit
+        shell: bash
+        run: |
+          cargo fmt --all
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates/latch-exec/src/lib.rs router/src/mcp-server.ts
+          git commit -m "fix: restore exec options export and MCP image typing"
+          git push origin HEAD:feat/v0.5-complete-local-agent

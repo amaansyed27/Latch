@@ -6,11 +6,18 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+latch-computer = { path = "../latch-computer" }
 latch-core = { path = "../latch-core" }
 latch-exec = { path = "../latch-exec" }
 latch-fs = { path = "../latch-fs" }
+latch-local = { path = "../latch-local" }
+latch-mcp-client = { path = "../latch-mcp-client" }
 latch-protocol = { path = "../latch-protocol" }
+serde_json.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+tempfile = "3.21"
 
 [lints]
 workspace = true

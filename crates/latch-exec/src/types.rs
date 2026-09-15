@@ -62,6 +62,8 @@ pub struct ProcessStart {
 pub enum ProcessState {
     Running,
     Exited { exit_code: Option<i32> },
+    Failed { exit_code: Option<i32> },
+    Killed,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

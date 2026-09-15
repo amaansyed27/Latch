@@ -46,12 +46,10 @@ impl ProcessManager {
     ) -> Result<ProcessStart, ExecError> {
         let spawned = spawn_grouped(workspace, spec)?;
         let child = spawned.child;
-
         let stdout_buffer = Arc::new(Mutex::new(OutputBuffer::default()));
         let stderr_buffer = Arc::new(Mutex::new(OutputBuffer::default()));
         let stdout_reader = spawn_reader("stdout", spawned.stdout, Arc::clone(&stdout_buffer));
         let stderr_reader = spawn_reader("stderr", spawned.stderr, Arc::clone(&stderr_buffer));
-
         let process_id = ProcessId::new();
         let os_pid = child.id();
         let process = ManagedProcess {
@@ -59,6 +57,7 @@ impl ProcessManager {
             stdin: Some(spawned.stdin),
             started: Instant::now(),
             finished: None,
+            killed: false,
             stdout: stdout_buffer,
             stderr: stderr_buffer,
             stdout_reader: Some(stdout_reader),
@@ -66,7 +65,6 @@ impl ProcessManager {
             stdout_cursor: 0,
             stderr_cursor: 0,
         };
-
         lock(&self.processes).insert(process_id, Arc::new(Mutex::new(process)));
         info!(%process_id, os_pid, "managed process started");
         Ok(ProcessStart {
@@ -86,10 +84,10 @@ impl ProcessManager {
     pub fn output(&self, process_id: ProcessId) -> Result<ManagedOutput, ExecError> {
         let handle = self.process(process_id)?;
         let process = lock(&handle);
-        let stdout = lock(&process.stdout).snapshot();
-        let stderr = lock(&process.stderr).snapshot();
-
-        Ok(ManagedOutput { stdout, stderr })
+        Ok(ManagedOutput {
+            stdout: lock(&process.stdout).snapshot(),
+            stderr: lock(&process.stderr).snapshot(),
+        })
     }
 
     pub fn poll(&self, process_id: ProcessId) -> Result<ProcessPoll, ExecError> {
@@ -166,15 +164,12 @@ impl ProcessManager {
                 .map(|(process_id, process)| (*process_id, Arc::clone(process)))
                 .collect::<Vec<_>>()
         };
-
         let mut report = ShutdownReport {
             examined: handles.len(),
             ..ShutdownReport::default()
         };
-
         for (process_id, handle) in handles {
-            let result = lock(&handle).terminate(process_id);
-            match result {
+            match lock(&handle).terminate(process_id) {
                 Ok(true) => report.terminated += 1,
                 Ok(false) => {}
                 Err(error) => {
@@ -183,16 +178,6 @@ impl ProcessManager {
                 }
             }
         }
-
-        if report.terminated > 0 || report.failures > 0 {
-            info!(
-                examined = report.examined,
-                terminated = report.terminated,
-                failures = report.failures,
-                "managed process shutdown complete"
-            );
-        }
-
         report
     }
 
@@ -216,6 +201,7 @@ struct ManagedProcess {
     stdin: Option<std::process::ChildStdin>,
     started: Instant,
     finished: Option<FinishedProcess>,
+    killed: bool,
     stdout: Arc<Mutex<OutputBuffer>>,
     stderr: Arc<Mutex<OutputBuffer>>,
     stdout_reader: Option<JoinHandle<()>>,
@@ -229,7 +215,6 @@ impl ManagedProcess {
         if self.finished.is_some() {
             return Ok(());
         }
-
         let status = self
             .child
             .try_wait()
@@ -237,7 +222,6 @@ impl ManagedProcess {
                 message: format!("could not query process {process_id}"),
                 source,
             })?;
-
         if let Some(status) = status {
             self.stdin.take();
             self.finished = Some(FinishedProcess {
@@ -251,17 +235,15 @@ impl ManagedProcess {
     fn terminate(&mut self, process_id: ProcessId) -> Result<bool, ExecError> {
         self.refresh(process_id)?;
         let was_running = self.finished.is_none();
-
         if was_running {
             self.stdin.take();
-            let status =
-                terminate_group(&mut self.child, &format!("managed process {process_id}"))?;
+            let status = terminate_group(&mut self.child, &format!("managed process {process_id}"))?;
+            self.killed = true;
             self.finished = Some(FinishedProcess {
                 status,
                 elapsed: self.started.elapsed(),
             });
         }
-
         self.join_readers(process_id)?;
         Ok(was_running)
     }
@@ -269,7 +251,6 @@ impl ManagedProcess {
     fn join_readers(&mut self, process_id: ProcessId) -> Result<(), ExecError> {
         let stdout_result = join_reader(process_id, "stdout", self.stdout_reader.take());
         let stderr_result = join_reader(process_id, "stderr", self.stderr_reader.take());
-
         stdout_result?;
         stderr_result?;
         Ok(())
@@ -277,8 +258,18 @@ impl ManagedProcess {
 
     fn status(&self) -> ProcessStatus {
         match &self.finished {
-            Some(finished) => ProcessStatus {
+            Some(_) if self.killed => ProcessStatus {
+                state: ProcessState::Killed,
+                duration: self.started.elapsed(),
+            },
+            Some(finished) if finished.status.success() => ProcessStatus {
                 state: ProcessState::Exited {
+                    exit_code: finished.status.code(),
+                },
+                duration: finished.elapsed,
+            },
+            Some(finished) => ProcessStatus {
+                state: ProcessState::Failed {
                     exit_code: finished.status.code(),
                 },
                 duration: finished.elapsed,
@@ -318,7 +309,6 @@ impl OutputBuffer {
             self.truncated = true;
             return;
         }
-
         let required = self.bytes.len() + chunk.len();
         if required > MAX_STREAM_BYTES {
             let remove = required - MAX_STREAM_BYTES;
@@ -390,7 +380,6 @@ fn join_reader(
     let Some(reader) = reader else {
         return Ok(());
     };
-
     reader.join().map_err(|_| ExecError::ProcessFailed {
         message: format!("{stream_name} reader for process {process_id} panicked"),
         source: std::io::Error::other("managed output reader thread panicked"),

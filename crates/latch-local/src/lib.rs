@@ -1,6 +1,6 @@
 use std::{
     collections::BTreeMap,
-    fs,
+    env, fs,
     io,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
@@ -56,9 +56,7 @@ pub enum McpTransportConfig {
         #[serde(default)]
         environment_references: BTreeMap<String, String>,
     },
-    Http {
-        url: String,
-    },
+    Http { url: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -110,6 +108,9 @@ pub struct LocalStore {
 
 impl LocalStore {
     pub fn default_location() -> Result<Self, LocalError> {
+        if let Some(path) = env::var_os("LATCH_LOCAL_STATE_DIR") {
+            return Ok(Self::new(PathBuf::from(path)));
+        }
         let directory = dirs::data_local_dir()
             .ok_or(LocalError::ApplicationDataUnavailable)?
             .join("Latch");
@@ -161,7 +162,6 @@ impl LocalStore {
         if !metadata.is_dir() {
             return Err(LocalError::RootNotDirectory(canonical_path));
         }
-
         let mut config = self.load()?;
         if let Some(existing) = config
             .roots
@@ -170,10 +170,9 @@ impl LocalStore {
         {
             return Ok(existing.clone());
         }
-        let display_name = root_display_name(&canonical_path);
         let root = ApprovedRoot {
             root_id: RootId::new(),
-            display_name,
+            display_name: root_display_name(&canonical_path),
             canonical_path,
         };
         config.roots.push(root.clone());
@@ -421,9 +420,7 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let store = LocalStore::new(temp.path());
         for index in 0..220 {
-            store
-                .record_activity("test", &format!("entry {index}"))
-                .unwrap();
+            store.record_activity("test", &format!("entry {index}")).unwrap();
         }
         let entries = store.activity().unwrap();
         assert_eq!(entries.len(), MAX_ACTIVITY_ENTRIES);

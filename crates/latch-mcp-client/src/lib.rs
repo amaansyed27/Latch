@@ -39,9 +39,14 @@ pub fn call_tool(
     tool_name: &str,
     arguments: Value,
 ) -> Result<RemoteCallResult, McpClientError> {
-    let arguments = arguments.as_object().cloned().ok_or_else(|| {
-        McpClientError::Protocol("tool arguments must be a JSON object".to_owned())
-    })?;
+    let arguments = match arguments {
+        Value::Object(arguments) => arguments,
+        _ => {
+            return Err(McpClientError::Protocol(
+                "tool arguments must be a JSON object".to_owned(),
+            ));
+        }
+    };
     run(
         server,
         Operation::Call {
@@ -99,7 +104,7 @@ where
 
     let outcome = match operation {
         Operation::List => {
-            let listed = tokio::time::timeout(MCP_TIMEOUT, service.list_tools(Default::default()))
+            let listed = tokio::time::timeout(MCP_TIMEOUT, service.list_tools(Option::default()))
                 .await
                 .map_err(|_| McpClientError::Timeout)?
                 .map_err(|error| McpClientError::Protocol(error.to_string()))?;

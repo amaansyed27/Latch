@@ -1,20 +1,24 @@
 use latch_engine::Engine;
 use latch_link::{execute_remote, ClientMessage};
+use latch_local::LocalStore;
 use latch_protocol::{
-    ExecRequest, Request, RequestEnvelope, ResponseOutcome, ResponsePayload, WorkspacePathRequest,
+    ExecRequest, Request, RequestEnvelope, ResponseOutcome, ResponsePayload, WorkspaceOpenRequest,
     PROTOCOL_VERSION,
 };
 
 #[test]
 fn remote_request_executes_through_shared_engine_and_preserves_correlation() {
     let temp = tempfile::tempdir().unwrap();
-    let mut engine = Engine::new();
+    let store = LocalStore::new(temp.path().join("state"));
+    let root = store.add_root(temp.path()).unwrap();
+    let mut engine = Engine::with_store(store);
 
     let open = engine.handle_envelope(RequestEnvelope {
         id: "open".to_owned(),
         version: PROTOCOL_VERSION,
-        request: Request::WorkspaceOpen(WorkspacePathRequest {
-            path: temp.path().to_string_lossy().into_owned(),
+        request: Request::WorkspaceOpen(WorkspaceOpenRequest {
+            root_id: root.root_id,
+            relative_path: Some(".".to_owned()),
         }),
     });
     let workspace_id = match open.outcome {

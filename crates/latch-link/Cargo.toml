@@ -24,6 +24,7 @@ tracing-subscriber.workspace = true
 url.workspace = true
 
 [dev-dependencies]
+latch-local = { path = "../latch-local" }
 tempfile = "3.21"
 
 [lints]

@@ -1,10 +1,12 @@
 use std::{
     io::{BufRead, BufReader, Write},
+    path::Path,
     process::{Child, ChildStdin, ChildStdout, Command, ExitStatus, Stdio},
     thread,
     time::Duration,
 };
 
+use latch_local::LocalStore;
 use latch_protocol::{
     ErrorCode, ProcessStateResponse, ResponseEnvelope, ResponseOutcome, ResponsePayload,
     PROTOCOL_VERSION,
@@ -19,12 +21,23 @@ struct DaemonClient {
 
 impl DaemonClient {
     fn start() -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_latch-daemon"))
+        Self::spawn(None)
+    }
+
+    fn start_with_state_dir(state_dir: &Path) -> Self {
+        Self::spawn(Some(state_dir))
+    }
+
+    fn spawn(state_dir: Option<&Path>) -> Self {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_latch-daemon"));
+        command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .unwrap();
+            .stderr(Stdio::inherit());
+        if let Some(state_dir) = state_dir {
+            command.env("LATCH_LOCAL_STATE_DIR", state_dir);
+        }
+        let mut child = command.spawn().unwrap();
 
         let stdin = child.stdin.take().unwrap();
         let stdout = BufReader::new(child.stdout.take().unwrap());
@@ -91,6 +104,11 @@ fn error(response: ResponseEnvelope) -> latch_protocol::ProtocolError {
     }
 }
 
+fn approved_root(state_dir: &Path, workspace_path: &Path) -> latch_local::ApprovedRoot {
+    std::fs::create_dir_all(workspace_path).unwrap();
+    LocalStore::new(state_dir).add_root(workspace_path).unwrap()
+}
+
 #[cfg(windows)]
 fn run_request(workspace_id: latch_core::WorkspaceId) -> Value {
     json!({
@@ -150,15 +168,17 @@ fn delayed_marker_request(workspace_id: latch_core::WorkspaceId) -> Value {
 }
 
 #[test]
-fn daemon_exercises_v01_protocol_across_process_boundary() {
+fn daemon_exercises_v05_protocol_across_process_boundary() {
     let temp = tempfile::tempdir().unwrap();
+    let state_dir = temp.path().join("state");
     let workspace_path = temp.path().join("workspace");
-    let mut daemon = DaemonClient::start();
+    let root = approved_root(&state_dir, &workspace_path);
+    let mut daemon = DaemonClient::start_with_state_dir(&state_dir);
 
     let workspace_id = match success(daemon.request(
         "1",
-        "workspace.create",
-        &json!({"path": workspace_path.to_string_lossy()}),
+        "workspace.open",
+        &json!({"root_id": root.root_id, "relative_path": "."}),
     )) {
         ResponsePayload::Workspace(response) => response.workspace_id,
         other => panic!("unexpected workspace response: {other:?}"),
@@ -199,43 +219,42 @@ fn daemon_exercises_v01_protocol_across_process_boundary() {
         other => panic!("unexpected exec.run response: {other:?}"),
     }
 
-    let process_id = match success(daemon.request("5", "exec.start", &start_request(workspace_id)))
-    {
-        ResponsePayload::ProcessStarted(response) => response.process_id,
+    let job_id = match success(daemon.request("5", "exec.start", &start_request(workspace_id))) {
+        ResponsePayload::ProcessStarted(response) => response.job_id,
         other => panic!("unexpected exec.start response: {other:?}"),
     };
 
-    match success(daemon.request("6", "exec.status", &json!({"process_id": process_id}))) {
-        ResponsePayload::ProcessStatus(response) => {
+    match success(daemon.request("6", "exec.poll", &json!({"job_id": job_id}))) {
+        ResponsePayload::ProcessPoll(response) => {
             assert!(matches!(response.state, ProcessStateResponse::Running));
         }
-        other => panic!("unexpected exec.status response: {other:?}"),
+        other => panic!("unexpected exec.poll response: {other:?}"),
     }
 
     let mut saw_ready = false;
     for attempt in 0..20 {
         match success(daemon.request(
-            &format!("output-{attempt}"),
-            "exec.output",
-            &json!({"process_id": process_id}),
+            &format!("poll-{attempt}"),
+            "exec.poll",
+            &json!({"job_id": job_id}),
         )) {
-            ResponsePayload::ProcessOutput(response) => {
+            ResponsePayload::ProcessPoll(response) => {
                 if response.stdout.text.contains("ready") {
                     saw_ready = true;
                     break;
                 }
             }
-            other => panic!("unexpected exec.output response: {other:?}"),
+            other => panic!("unexpected exec.poll response: {other:?}"),
         }
         thread::sleep(Duration::from_millis(25));
     }
     assert!(saw_ready, "managed output never became observable");
 
-    match success(daemon.request("7", "exec.kill", &json!({"process_id": process_id}))) {
-        ResponsePayload::ProcessStatus(response) => {
+    match success(daemon.request("7", "exec.kill", &json!({"job_id": job_id}))) {
+        ResponsePayload::ProcessPoll(response) => {
             assert!(matches!(
                 response.state,
-                ProcessStateResponse::Exited { .. }
+                ProcessStateResponse::Killed | ProcessStateResponse::Exited { .. }
             ));
         }
         other => panic!("unexpected exec.kill response: {other:?}"),
@@ -246,14 +265,13 @@ fn daemon_exercises_v01_protocol_across_process_boundary() {
         "fs.read",
         &json!({"workspace_id": workspace_id, "path": "../outside.txt"}),
     ));
-    assert_eq!(traversal.code, ErrorCode::PathOutsideWorkspace);
+    assert_eq!(traversal.code, ErrorCode::PathEscape);
 
     assert!(daemon.shutdown().success());
 }
 
 #[test]
 fn daemon_reports_transport_protocol_errors() {
-    let temp = tempfile::tempdir().unwrap();
     let mut daemon = DaemonClient::start();
 
     let malformed = error(daemon.send_raw("{not-json"));
@@ -262,8 +280,8 @@ fn daemon_reports_transport_protocol_errors() {
     let unsupported = error(daemon.send_value(&json!({
         "id": "bad-version",
         "version": PROTOCOL_VERSION + 1,
-        "method": "workspace.create",
-        "params": {"path": temp.path().join("unused").to_string_lossy()}
+        "method": "roots.list",
+        "params": {}
     })));
     assert_eq!(unsupported.code, ErrorCode::UnsupportedVersion);
 
@@ -273,14 +291,16 @@ fn daemon_reports_transport_protocol_errors() {
 #[test]
 fn daemon_shutdown_terminates_managed_processes() {
     let temp = tempfile::tempdir().unwrap();
+    let state_dir = temp.path().join("state");
     let workspace_path = temp.path().join("workspace");
+    let root = approved_root(&state_dir, &workspace_path);
     let marker = workspace_path.join("daemon-survived.txt");
-    let mut daemon = DaemonClient::start();
+    let mut daemon = DaemonClient::start_with_state_dir(&state_dir);
 
     let workspace_id = match success(daemon.request(
         "1",
-        "workspace.create",
-        &json!({"path": workspace_path.to_string_lossy()}),
+        "workspace.open",
+        &json!({"root_id": root.root_id, "relative_path": "."}),
     )) {
         ResponsePayload::Workspace(response) => response.workspace_id,
         other => panic!("unexpected workspace response: {other:?}"),

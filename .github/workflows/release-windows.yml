@@ -55,10 +55,18 @@ jobs:
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
       - run: cargo test --workspace
       - run: cargo build --workspace
-      - run: npm install --prefix router
-      - run: npm run lint --prefix router
-      - run: npm run typecheck --prefix router
-      - run: npm test --prefix router
+      - name: Install router dependencies
+        working-directory: router
+        run: npm install
+      - name: Lint router
+        working-directory: router
+        run: npm run lint
+      - name: Typecheck router
+        working-directory: router
+        run: npm run typecheck
+      - name: Test router
+        working-directory: router
+        run: npm test
       - name: Verify WiX V0.5 metadata
         shell: pwsh
         run: |

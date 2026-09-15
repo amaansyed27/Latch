@@ -24,14 +24,28 @@ jobs:
       - run: cargo build --workspace
 
   windows:
-    name: Windows test/build
+    name: Windows test/build/package
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace
       - run: cargo build --workspace
+      - name: Install WiX
+        run: dotnet tool install --global wix --version 4.0.6 --add-source https://api.nuget.org/v3/index.json
+      - name: Build Windows installer
+        run: ./scripts/build-windows-installer.ps1
+      - name: Verify MSI contains tray app and CLI
+        shell: pwsh
+        run: |
+          $extract = Join-Path $env:RUNNER_TEMP 'latch-msi'
+          $process = Start-Process msiexec.exe -ArgumentList '/a', 'artifacts\LatchSetup-x64.msi', '/qn', "TARGETDIR=$extract" -Wait -PassThru
+          if ($process.ExitCode) { throw "MSI extraction failed with $($process.ExitCode)" }
+          if (-not (Get-ChildItem $extract -Filter latch.exe -Recurse | Select-Object -First 1)) { throw 'latch.exe missing' }
+          if (-not (Get-ChildItem $extract -Filter LatchDesktop.exe -Recurse | Select-Object -First 1)) { throw 'LatchDesktop.exe missing' }
 
   router:
     name: Router quality gates

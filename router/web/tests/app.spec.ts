@@ -123,10 +123,11 @@ test("guided pairing waits for online, then device details and confirmed revoke"
   await page.getByRole("button", { name: "Add computer", exact: true }).click();
   await page.getByRole("button", { name: "I already installed Latch" }).click();
   await page.getByRole("button", { name: "Generate pairing code" }).click();
-  await expect(page.getByRole("dialog").locator("code")).toContainText(
-    "latch pair ",
-  );
-  await expect(page.getByText("Waiting for your computer…")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Paste this code into Latch." }),
+  ).toBeVisible();
+  await expect(page.getByRole("dialog").locator(".code-box code")).not.toBeEmpty();
+  await expect(page.getByText("Waiting for the Latch app…")).toBeVisible();
   devices = [
     {
       deviceId: "00000000-0000-4000-8000-000000000001",

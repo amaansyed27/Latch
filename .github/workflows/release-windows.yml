@@ -34,6 +34,16 @@ jobs:
             throw "No successful CI push run exists for main SHA $head"
           }
           "RELEASE_SHA=$head" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+      - name: Refuse duplicate tag or release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/git/ref/tags/v0.5.0-beta.1" *> $null
+          if ($LASTEXITCODE -eq 0) { throw 'Tag v0.5.0-beta.1 already exists' }
+          gh release view "v0.5.0-beta.1" --repo "${{ github.repository }}" *> $null
+          if ($LASTEXITCODE -eq 0) { throw 'Release v0.5.0-beta.1 already exists' }
+          exit 0
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -49,15 +59,34 @@ jobs:
       - run: npm run lint --prefix router
       - run: npm run typecheck --prefix router
       - run: npm test --prefix router
+      - name: Verify WiX V0.5 metadata
+        shell: pwsh
+        run: |
+          [xml]$wix = Get-Content 'installer\Latch.wxs' -Raw
+          $package = $wix.SelectSingleNode("//*[local-name()='Package']")
+          if (-not $package) { throw 'WiX Package element missing' }
+          if ($package.Version -ne '0.5.0') { throw "Unexpected WiX Version: $($package.Version)" }
+          if ($package.UpgradeCode -ne '6B9638AD-38B8-4EA2-88EF-76D9961EBC4C') { throw "Unexpected UpgradeCode: $($package.UpgradeCode)" }
       - name: Install WiX
         run: dotnet tool install --global wix --version 4.0.6 --add-source https://api.nuget.org/v3/index.json
       - name: Build installer
         run: ./scripts/build-windows-installer.ps1
-      - name: Verify packaged applications and version
+      - name: Verify packaged applications and versions
         shell: pwsh
         run: |
+          $msi = (Resolve-Path 'artifacts\LatchSetup-x64.msi').Path
+          $installer = New-Object -ComObject WindowsInstaller.Installer
+          $database = $installer.OpenDatabase($msi, 0)
+          $view = $database.OpenView("SELECT ``Value`` FROM ``Property`` WHERE ``Property``='ProductVersion'")
+          $view.Execute()
+          $record = $view.Fetch()
+          if (-not $record) { throw 'MSI ProductVersion is missing' }
+          $productVersion = $record.StringData(1)
+          if ($productVersion -ne '0.5.0') { throw "Unexpected MSI ProductVersion: $productVersion" }
+          $view.Close()
+
           $extract = Join-Path $env:RUNNER_TEMP 'latch-msi'
-          $process = Start-Process msiexec.exe -ArgumentList '/a', 'artifacts\LatchSetup-x64.msi', '/qn', "TARGETDIR=$extract" -Wait -PassThru
+          $process = Start-Process msiexec.exe -ArgumentList '/a', "`"$msi`"", '/qn', "TARGETDIR=`"$extract`"" -Wait -PassThru
           if ($process.ExitCode) { throw "MSI extraction failed with $($process.ExitCode)" }
           $cli = Get-ChildItem $extract -Filter latch.exe -Recurse | Select-Object -First 1
           $desktop = Get-ChildItem $extract -Filter LatchDesktop.exe -Recurse | Select-Object -First 1
@@ -65,17 +94,47 @@ jobs:
           if (-not $desktop) { throw 'LatchDesktop.exe is missing from MSI' }
           $version = & $cli.FullName --version
           if ($version -ne 'latch 0.5.0-beta.1') { throw "Unexpected version: $version" }
-      - name: Refuse duplicate tag
+      - name: Verify release checksums
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view "v0.5.0-beta.1" --repo "${{ github.repository }}" *> $null
-          if ($LASTEXITCODE -eq 0) { throw 'v0.5.0-beta.1 already exists' }
-          exit 0
+          $checksumFile = 'artifacts\SHA256SUMS.txt'
+          if (-not (Test-Path $checksumFile)) { throw 'SHA256SUMS.txt is missing' }
+          $entries = @{}
+          foreach ($line in Get-Content $checksumFile) {
+            if ($line -match '^([0-9a-fA-F]{64})\s+(.+)$') {
+              $entries[$matches[2]] = $matches[1].ToLowerInvariant()
+            }
+          }
+          foreach ($name in @('LatchSetup-x64.msi', 'latch-windows-x64.zip')) {
+            if (-not $entries.ContainsKey($name)) { throw "$name is missing from SHA256SUMS.txt" }
+            $actual = (Get-FileHash "artifacts\$name" -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actual -ne $entries[$name]) { throw "Checksum mismatch for $name" }
+          }
       - name: Publish prerelease
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "v0.5.0-beta.1" artifacts/* --repo "${{ github.repository }}" --target "$env:RELEASE_SHA" --prerelease --generate-notes --title "Latch v0.5.0-beta.1"
+          gh release create "v0.5.0-beta.1" artifacts/LatchSetup-x64.msi artifacts/latch-windows-x64.zip artifacts/SHA256SUMS.txt --repo "${{ github.repository }}" --target "$env:RELEASE_SHA" --prerelease --generate-notes --title "Latch v0.5.0-beta.1"
+      - name: Verify published tag and assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ref = gh api "repos/${{ github.repository }}/git/ref/tags/v0.5.0-beta.1" | ConvertFrom-Json
+          $tagSha = $ref.object.sha
+          if ($ref.object.type -eq 'tag') {
+            $tag = gh api "repos/${{ github.repository }}/git/tags/$tagSha" | ConvertFrom-Json
+            $tagSha = $tag.object.sha
+          }
+          if ($tagSha -ne $env:RELEASE_SHA) {
+            throw "Release tag targets $tagSha instead of $env:RELEASE_SHA"
+          }
+          $release = gh release view "v0.5.0-beta.1" --repo "${{ github.repository }}" --json tagName,isPrerelease,assets,url | ConvertFrom-Json
+          if ($release.tagName -ne 'v0.5.0-beta.1') { throw 'Unexpected release tag name' }
+          if (-not $release.isPrerelease) { throw 'Release is not marked prerelease' }
+          $assetNames = @($release.assets | ForEach-Object { $_.name })
+          foreach ($name in @('LatchSetup-x64.msi', 'latch-windows-x64.zip', 'SHA256SUMS.txt')) {
+            if ($assetNames -notcontains $name) { throw "Release asset missing: $name" }
+          }
+          Write-Output "Published $($release.url) from exact main SHA $env:RELEASE_SHA"

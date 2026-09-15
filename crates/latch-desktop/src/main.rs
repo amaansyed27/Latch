@@ -226,7 +226,8 @@ mod windows_app {
 
         if let Some(status) = file.as_mut() {
             if status.state != "unpaired" && !process_exists(status.pid) {
-                status.state = "stopped".to_owned();
+                status.state.clear();
+                status.state.push_str("stopped");
             }
         }
 
@@ -320,6 +321,7 @@ mod windows_app {
             .map_err(|error| error.to_string())
     }
 
+    #[allow(clippy::needless_pass_by_value)]
     #[tauri::command]
     fn hide_window(app: AppHandle) {
         if let Some(window) = app.get_webview_window("main") {
@@ -327,6 +329,7 @@ mod windows_app {
         }
     }
 
+    #[allow(clippy::needless_pass_by_value)]
     #[tauri::command]
     fn quit_latch(app: AppHandle) {
         let _ = run_cli(&["stop"]);

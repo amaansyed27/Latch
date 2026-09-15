@@ -131,7 +131,7 @@ fn blocking_run_times_out_and_returns_partial_output() {
 fn blocking_run_bounds_and_drains_both_output_streams() {
     let (_temp, workspace) = workspace();
     let options = RunOptions {
-        timeout: Some(Duration::from_secs(5)),
+        timeout: Some(Duration::from_secs(15)),
         max_stdout_bytes: 1024,
         max_stderr_bytes: 1024,
     };

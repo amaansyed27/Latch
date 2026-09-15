@@ -39,13 +39,10 @@ pub fn call_tool(
     tool_name: &str,
     arguments: Value,
 ) -> Result<RemoteCallResult, McpClientError> {
-    let arguments = match arguments {
-        Value::Object(arguments) => arguments,
-        _ => {
-            return Err(McpClientError::Protocol(
-                "tool arguments must be a JSON object".to_owned(),
-            ));
-        }
+    let Value::Object(arguments) = arguments else {
+        return Err(McpClientError::Protocol(
+            "tool arguments must be a JSON object".to_owned(),
+        ));
     };
     run(
         server,

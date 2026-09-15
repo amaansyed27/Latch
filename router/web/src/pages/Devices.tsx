@@ -149,7 +149,7 @@ export default function Devices({ overview = false }: { overview?: boolean }) {
                   <span className="step-number">02</span>
                   <div>
                     <h3>Pair your computer</h3>
-                    <p>Run one command to connect it.</p>
+                    <p>Create a one-time code here, then paste it into Latch Desktop.</p>
                   </div>
                 </li>
                 <li>

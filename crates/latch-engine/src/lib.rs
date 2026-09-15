@@ -3,31 +3,27 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use latch_computer::{
-    ComputerError, ComputerManager, MouseButton, ScreenshotFormat, ScrollAxis,
-};
+use latch_computer::{ComputerError, ComputerManager, MouseButton, ScreenshotFormat, ScrollAxis};
 use latch_core::{McpServerId, Workspace, WorkspaceError, WorkspaceId};
 use latch_exec::{
     run_blocking, CommandSpec, ExecError, ManagedStreamOutput, ProcessManager, ProcessState,
 };
-use latch_fs::{
-    EntryKind, FsError, Replacement, SearchMatchKind, SearchOptions, WorkspaceFs,
-};
+use latch_fs::{EntryKind, FsError, Replacement, SearchMatchKind, SearchOptions, WorkspaceFs};
 use latch_local::{LocalConfig, LocalError, LocalStore, McpServerConfig};
 use latch_mcp_client::{self, McpClientError};
 use latch_protocol::{
     DirectoryEntryResponse, DirectoryResponse, DisplayResponse, DisplaysResponse, EmptyRequest,
     EntryKindResponse, ErrorCode, ExecRequest, ExecResponse, FileContentResponse, FileStatResponse,
     KeyRequest, McpCallRequest, McpCallResponse, McpServerRequest, McpServerResponse,
-    McpServerStatusResponse, McpServersResponse, McpToolResponse, McpToolsResponse, MouseButtonRequest,
-    MouseClickRequest, MouseDragRequest, MoveRequest, PatchRequest, PathRequest, PointRequest,
-    ProcessPollResponse, ProcessRequest, ProcessStartedResponse, ProcessStateResponse,
-    ProcessStdinRequest, ProcessStreamOutputResponse, ProtocolError, ReadRequest, Request,
-    RequestEnvelope, ResponseEnvelope, ResponsePayload, RootResponse, RootsResponse, ScreenshotFormatRequest,
-    ScreenshotRequest, ScreenshotResponse, ScrollAxisRequest, ScrollRequest, SearchMatchKindResponse,
-    SearchMatchResponse, SearchRequest, SearchResponse, TypeRequest, WindowRequest, WindowResponse,
-    WindowsResponse, WorkspaceOpenRequest, WorkspacePathRequest, WorkspaceResponse, WriteRequest,
-    PROTOCOL_VERSION,
+    McpServerStatusResponse, McpServersResponse, McpToolResponse, McpToolsResponse,
+    MouseButtonRequest, MouseClickRequest, MouseDragRequest, MoveRequest, PatchRequest,
+    PathRequest, PointRequest, ProcessPollResponse, ProcessRequest, ProcessStartedResponse,
+    ProcessStateResponse, ProcessStdinRequest, ProcessStreamOutputResponse, ProtocolError,
+    ReadRequest, Request, RequestEnvelope, ResponseEnvelope, ResponsePayload, RootResponse,
+    RootsResponse, ScreenshotFormatRequest, ScreenshotRequest, ScreenshotResponse,
+    ScrollAxisRequest, ScrollRequest, SearchMatchKindResponse, SearchMatchResponse, SearchRequest,
+    SearchResponse, TypeRequest, WindowRequest, WindowResponse, WindowsResponse,
+    WorkspaceOpenRequest, WorkspacePathRequest, WorkspaceResponse, WriteRequest, PROTOCOL_VERSION,
 };
 use tracing::{error, info, warn};
 
@@ -172,7 +168,9 @@ impl Engine {
             .roots
             .iter()
             .find(|root| root.root_id == request.root_id)
-            .ok_or_else(|| protocol_error(ErrorCode::RootNotFound, "approved root was not found"))?;
+            .ok_or_else(|| {
+                protocol_error(ErrorCode::RootNotFound, "approved root was not found")
+            })?;
         let relative_text = request.relative_path.as_deref().unwrap_or(".");
         let relative = safe_relative_path(relative_text)?;
         let workspace = Workspace::open(root.canonical_path.join(&relative))
@@ -191,7 +189,10 @@ impl Engine {
             relative_display.clone(),
             false,
         )?;
-        self.record("Opened folder", &format!("{}/{}", root.display_name, relative_display));
+        self.record(
+            "Opened folder",
+            &format!("{}/{}", root.display_name, relative_display),
+        );
         Ok(result)
     }
 
@@ -291,7 +292,11 @@ impl Engine {
         let context = self.workspace(config, request.workspace_id)?;
         context
             .fs
-            .write_text_with_mode(&request.path, &request.contents, request.overwrite.unwrap_or(true))
+            .write_text_with_mode(
+                &request.path,
+                &request.contents,
+                request.overwrite.unwrap_or(true),
+            )
             .map_err(map_fs_error)?;
         self.record("Wrote file", &request.path);
         Ok(ResponsePayload::Ack)
@@ -353,8 +358,15 @@ impl Engine {
                 "search must enable filename, content, or both",
             ));
         }
-        if request.glob.as_ref().is_some_and(|glob| glob.len() > MAX_PATH_CHARS) {
-            return Err(protocol_error(ErrorCode::InvalidRequest, "search glob is too large"));
+        if request
+            .glob
+            .as_ref()
+            .is_some_and(|glob| glob.len() > MAX_PATH_CHARS)
+        {
+            return Err(protocol_error(
+                ErrorCode::InvalidRequest,
+                "search glob is too large",
+            ));
         }
         let context = self.workspace(config, request.workspace_id)?;
         let result = context
@@ -364,7 +376,10 @@ impl Engine {
                 filename,
                 content,
                 glob: request.glob,
-                max_results: request.max_results.unwrap_or(100).clamp(1, MAX_SEARCH_RESULTS),
+                max_results: request
+                    .max_results
+                    .unwrap_or(100)
+                    .clamp(1, MAX_SEARCH_RESULTS),
             })
             .map_err(map_fs_error)?;
         self.record("Searched files", &request.query);
@@ -411,7 +426,11 @@ impl Engine {
         let context = self.workspace(config, request.workspace_id)?;
         context
             .fs
-            .move_path(&request.from, &request.to, request.overwrite.unwrap_or(false))
+            .move_path(
+                &request.from,
+                &request.to,
+                request.overwrite.unwrap_or(false),
+            )
             .map_err(map_fs_error)?;
         self.record("Moved file", &format!("{} -> {}", request.from, request.to));
         Ok(ResponsePayload::Ack)
@@ -425,7 +444,10 @@ impl Engine {
         require_files(config)?;
         validate_remote_path(&request.path)?;
         let context = self.workspace(config, request.workspace_id)?;
-        context.fs.delete_file(&request.path).map_err(map_fs_error)?;
+        context
+            .fs
+            .delete_file(&request.path)
+            .map_err(map_fs_error)?;
         self.record("Deleted file", &request.path);
         Ok(ResponsePayload::Ack)
     }
@@ -481,7 +503,10 @@ impl Engine {
         request: ProcessRequest,
     ) -> Result<ResponsePayload, ProtocolError> {
         require_commands(config)?;
-        let poll = self.processes.poll(request.job_id).map_err(map_exec_error)?;
+        let poll = self
+            .processes
+            .poll(request.job_id)
+            .map_err(map_exec_error)?;
         Ok(ResponsePayload::ProcessPoll(ProcessPollResponse {
             state: map_process_state(&poll.status.state),
             duration_ms: duration_ms(poll.status.duration),
@@ -509,8 +534,13 @@ impl Engine {
         request: ProcessRequest,
     ) -> Result<ResponsePayload, ProtocolError> {
         require_commands(config)?;
-        self.processes.kill(request.job_id).map_err(map_exec_error)?;
-        let poll = self.processes.poll(request.job_id).map_err(map_exec_error)?;
+        self.processes
+            .kill(request.job_id)
+            .map_err(map_exec_error)?;
+        let poll = self
+            .processes
+            .poll(request.job_id)
+            .map_err(map_exec_error)?;
         self.record("Stopped command", &request.job_id.to_string());
         Ok(ResponsePayload::ProcessPoll(ProcessPollResponse {
             state: map_process_state(&poll.status.state),
@@ -603,7 +633,9 @@ impl Engine {
         request: WindowRequest,
     ) -> Result<ResponsePayload, ProtocolError> {
         require_control(config)?;
-        self.computer.focus(&request.window_id).map_err(map_computer_error)?;
+        self.computer
+            .focus(&request.window_id)
+            .map_err(map_computer_error)?;
         self.record("Focused window", &request.window_id);
         Ok(ResponsePayload::Ack)
     }
@@ -689,8 +721,13 @@ impl Engine {
         request: TypeRequest,
     ) -> Result<ResponsePayload, ProtocolError> {
         require_control(config)?;
-        self.computer.type_text(&request.text).map_err(map_computer_error)?;
-        self.record("Typed text", &format!("{} characters", request.text.chars().count()));
+        self.computer
+            .type_text(&request.text)
+            .map_err(map_computer_error)?;
+        self.record(
+            "Typed text",
+            &format!("{} characters", request.text.chars().count()),
+        );
         Ok(ResponsePayload::Ack)
     }
 
@@ -794,7 +831,10 @@ impl Engine {
         workspace_id: WorkspaceId,
     ) -> Result<&WorkspaceContext, ProtocolError> {
         let context = self.workspaces.get(&workspace_id).ok_or_else(|| {
-            protocol_error(ErrorCode::WorkspaceExpired, "workspace is not open or has expired")
+            protocol_error(
+                ErrorCode::WorkspaceExpired,
+                "workspace is not open or has expired",
+            )
         })?;
         if context.developer_raw {
             if config.legacy_absolute_workspaces {
@@ -900,7 +940,12 @@ fn remote_mcp_server(
         .mcp_servers
         .iter()
         .find(|server| server.server_id == server_id)
-        .ok_or_else(|| protocol_error(ErrorCode::McpServerNotFound, "local MCP server was not found"))?;
+        .ok_or_else(|| {
+            protocol_error(
+                ErrorCode::McpServerNotFound,
+                "local MCP server was not found",
+            )
+        })?;
     if !server.enabled || !server.allow_remote {
         return Err(protocol_error(
             ErrorCode::McpServerDisabled,
@@ -912,17 +957,26 @@ fn remote_mcp_server(
 
 fn validate_command(request: &ExecRequest) -> Result<(), ProtocolError> {
     if request.program.trim().is_empty() || request.program.len() > 4096 {
-        return Err(protocol_error(ErrorCode::InvalidRequest, "invalid command program"));
+        return Err(protocol_error(
+            ErrorCode::InvalidRequest,
+            "invalid command program",
+        ));
     }
     if request.args.len() > 256 || request.args.iter().any(|argument| argument.len() > 8192) {
-        return Err(protocol_error(ErrorCode::PayloadTooLarge, "command arguments are too large"));
+        return Err(protocol_error(
+            ErrorCode::PayloadTooLarge,
+            "command arguments are too large",
+        ));
     }
     Ok(())
 }
 
 fn validate_remote_path(path: &str) -> Result<(), ProtocolError> {
     if path.chars().count() > MAX_PATH_CHARS {
-        return Err(protocol_error(ErrorCode::PayloadTooLarge, "path is too large"));
+        return Err(protocol_error(
+            ErrorCode::PayloadTooLarge,
+            "path is too large",
+        ));
     }
     safe_relative_path(path).map(|_| ())
 }
@@ -930,11 +984,17 @@ fn validate_remote_path(path: &str) -> Result<(), ProtocolError> {
 fn safe_relative_path(value: &str) -> Result<PathBuf, ProtocolError> {
     let normalized = if value.is_empty() { "." } else { value };
     if looks_like_absolute_windows_path(normalized) || normalized.starts_with("//") {
-        return Err(protocol_error(ErrorCode::PathEscape, "absolute paths are not allowed"));
+        return Err(protocol_error(
+            ErrorCode::PathEscape,
+            "absolute paths are not allowed",
+        ));
     }
     let path = Path::new(normalized);
     if path.is_absolute() {
-        return Err(protocol_error(ErrorCode::PathEscape, "absolute paths are not allowed"));
+        return Err(protocol_error(
+            ErrorCode::PathEscape,
+            "absolute paths are not allowed",
+        ));
     }
     for component in path.components() {
         match component {
@@ -1068,7 +1128,9 @@ fn map_computer_error(error: ComputerError) -> ProtocolError {
     let code = match error {
         ComputerError::InvalidInput(_) | ComputerError::WindowNotFound => ErrorCode::InvalidRequest,
         ComputerError::ScreenshotTooLarge => ErrorCode::PayloadTooLarge,
-        ComputerError::UnsupportedPlatform | ComputerError::Operation(_) => ErrorCode::ComputerUnavailable,
+        ComputerError::UnsupportedPlatform | ComputerError::Operation(_) => {
+            ErrorCode::ComputerUnavailable
+        }
     };
     protocol_error(code, error.to_string())
 }
@@ -1136,7 +1198,9 @@ mod tests {
             }),
         });
         match response.outcome {
-            ResponseOutcome::Error { error } => assert_eq!(error.code, ErrorCode::UnsupportedVersion),
+            ResponseOutcome::Error { error } => {
+                assert_eq!(error.code, ErrorCode::UnsupportedVersion)
+            }
             outcome @ ResponseOutcome::Ok { .. } => panic!("unexpected response: {outcome:?}"),
         }
     }
@@ -1200,7 +1264,9 @@ mod tests {
     #[test]
     fn windows_absolute_syntax_is_rejected_on_every_platform() {
         assert_eq!(
-            safe_relative_path("C:\\Windows\\System32").unwrap_err().code,
+            safe_relative_path("C:\\Windows\\System32")
+                .unwrap_err()
+                .code,
             ErrorCode::PathEscape
         );
         assert_eq!(

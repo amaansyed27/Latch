@@ -272,7 +272,9 @@ mod platform {
                         .id()
                         .is_ok_and(|id| format!("display-{id}") == display_id)
                 })
-                .ok_or_else(|| ComputerError::InvalidInput("display id was not found".to_owned()))?,
+                .ok_or_else(|| {
+                    ComputerError::InvalidInput("display id was not found".to_owned())
+                })?,
             None => monitors
                 .iter()
                 .find(|monitor| monitor.is_primary().unwrap_or(false))
@@ -337,8 +339,8 @@ mod platform {
 
     #[allow(unsafe_code)]
     pub fn focus(native_id: u32) -> Result<(), ComputerError> {
-        let pointer = usize::try_from(native_id)
-            .map_err(|_| ComputerError::WindowNotFound)? as *mut c_void;
+        let pointer =
+            usize::try_from(native_id).map_err(|_| ComputerError::WindowNotFound)? as *mut c_void;
         let window = unsafe { HWND::from_ptr(pointer) };
         if window.SetForegroundWindow() {
             Ok(())
@@ -350,11 +352,15 @@ mod platform {
     }
 
     pub fn mouse_move(x: i32, y: i32) -> Result<(), ComputerError> {
-        enigo()?.move_mouse(x, y, Coordinate::Abs).map_err(operation)
+        enigo()?
+            .move_mouse(x, y, Coordinate::Abs)
+            .map_err(operation)
     }
 
     pub fn mouse_click(button: MouseButton) -> Result<(), ComputerError> {
-        enigo()?.button(button_value(button), Click).map_err(operation)
+        enigo()?
+            .button(button_value(button), Click)
+            .map_err(operation)
     }
 
     pub fn mouse_drag(
@@ -368,14 +374,18 @@ mod platform {
         input
             .move_mouse(from_x, from_y, Coordinate::Abs)
             .map_err(operation)?;
-        input.button(button_value(button), Press).map_err(operation)?;
+        input
+            .button(button_value(button), Press)
+            .map_err(operation)?;
         for step in 1..=20 {
             let x = from_x + (to_x - from_x) * step / 20;
             let y = from_y + (to_y - from_y) * step / 20;
             input.move_mouse(x, y, Coordinate::Abs).map_err(operation)?;
             thread::sleep(Duration::from_millis(5));
         }
-        input.button(button_value(button), Release).map_err(operation)
+        input
+            .button(button_value(button), Release)
+            .map_err(operation)
     }
 
     pub fn scroll(amount: i32, axis: ScrollAxis) -> Result<(), ComputerError> {

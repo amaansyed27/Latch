@@ -1,7 +1,6 @@
 use std::{
     io::Read,
     path::{Path, PathBuf},
-    time::UNIX_EPOCH,
 };
 
 use cap_std::{ambient_authority, fs::Dir};
@@ -112,7 +111,9 @@ impl WorkspaceFs {
             .dir
             .open(&path)
             .map_err(|source| FsError::from_io(path.clone(), source))?;
-        let limit = u64::try_from(max_bytes).unwrap_or(u64::MAX).saturating_add(1);
+        let limit = u64::try_from(max_bytes)
+            .unwrap_or(u64::MAX)
+            .saturating_add(1);
         let mut bytes = Vec::new();
         file.take(limit)
             .read_to_end(&mut bytes)
@@ -121,9 +122,8 @@ impl WorkspaceFs {
         if truncated {
             bytes.truncate(max_bytes);
         }
-        let contents = String::from_utf8(bytes).map_err(|_| FsError::InvalidPath {
-            path: path.clone(),
-        })?;
+        let contents =
+            String::from_utf8(bytes).map_err(|_| FsError::InvalidPath { path: path.clone() })?;
         Ok(TextRead {
             contents,
             truncated,
@@ -290,7 +290,8 @@ impl WorkspaceFs {
         };
         let modified_ms = metadata.modified().ok().and_then(|modified| {
             modified
-                .duration_since(UNIX_EPOCH)
+                .into_std()
+                .duration_since(std::time::UNIX_EPOCH)
                 .ok()
                 .and_then(|duration| u64::try_from(duration.as_millis()).ok())
         });
@@ -425,9 +426,7 @@ fn wildcard_match(pattern: &str, value: &str) -> bool {
     let value = value.as_bytes();
     let (mut p, mut v, mut star, mut retry) = (0_usize, 0_usize, None, 0_usize);
     while v < value.len() {
-        if p < pattern.len()
-            && (pattern[p] == b'?' || pattern[p].eq_ignore_ascii_case(&value[v]))
-        {
+        if p < pattern.len() && (pattern[p] == b'?' || pattern[p].eq_ignore_ascii_case(&value[v])) {
             p += 1;
             v += 1;
         } else if p < pattern.len() && pattern[p] == b'*' {

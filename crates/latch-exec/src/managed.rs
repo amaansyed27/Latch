@@ -127,10 +127,13 @@ impl ProcessManager {
             });
         }
         if !text.is_empty() {
-            let stdin = process.stdin.as_mut().ok_or_else(|| ExecError::ProcessFailed {
-                message: format!("stdin for process {process_id} is closed"),
-                source: std::io::Error::new(std::io::ErrorKind::BrokenPipe, "stdin closed"),
-            })?;
+            let stdin = process
+                .stdin
+                .as_mut()
+                .ok_or_else(|| ExecError::ProcessFailed {
+                    message: format!("stdin for process {process_id} is closed"),
+                    source: std::io::Error::new(std::io::ErrorKind::BrokenPipe, "stdin closed"),
+                })?;
             stdin
                 .write_all(text.as_bytes())
                 .and_then(|()| stdin.flush())
@@ -237,7 +240,8 @@ impl ManagedProcess {
         let was_running = self.finished.is_none();
         if was_running {
             self.stdin.take();
-            let status = terminate_group(&mut self.child, &format!("managed process {process_id}"))?;
+            let status =
+                terminate_group(&mut self.child, &format!("managed process {process_id}"))?;
             self.killed = true;
             self.finished = Some(FinishedProcess {
                 status,
@@ -334,8 +338,8 @@ impl OutputBuffer {
             .dropped
             .saturating_add(u64::try_from(self.bytes.len()).unwrap_or(u64::MAX));
         let effective = cursor.max(self.dropped).min(end);
-        let offset = usize::try_from(effective.saturating_sub(self.dropped))
-            .unwrap_or(self.bytes.len());
+        let offset =
+            usize::try_from(effective.saturating_sub(self.dropped)).unwrap_or(self.bytes.len());
         (
             ManagedStreamOutput {
                 text: String::from_utf8_lossy(&self.bytes[offset..]).into_owned(),

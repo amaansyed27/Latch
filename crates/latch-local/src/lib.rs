@@ -1,7 +1,6 @@
 use std::{
     collections::BTreeMap,
-    env, fs,
-    io,
+    env, fs, io,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -56,7 +55,9 @@ pub enum McpTransportConfig {
         #[serde(default)]
         environment_references: BTreeMap<String, String>,
     },
-    Http { url: String },
+    Http {
+        url: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -130,10 +131,8 @@ impl LocalStore {
     pub fn load(&self) -> Result<LocalConfig, LocalError> {
         let path = self.directory.join(CONFIG_FILE);
         match fs::read(&path) {
-            Ok(bytes) => serde_json::from_slice(&bytes).map_err(|source| LocalError::InvalidConfig {
-                path,
-                source,
-            }),
+            Ok(bytes) => serde_json::from_slice(&bytes)
+                .map_err(|source| LocalError::InvalidConfig { path, source }),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(LocalConfig::default()),
             Err(source) => Err(LocalError::Io { path, source }),
         }
@@ -240,10 +239,8 @@ impl LocalStore {
     pub fn activity(&self) -> Result<Vec<ActivityEntry>, LocalError> {
         let path = self.directory.join(ACTIVITY_FILE);
         match fs::read(&path) {
-            Ok(bytes) => serde_json::from_slice(&bytes).map_err(|source| LocalError::InvalidConfig {
-                path,
-                source,
-            }),
+            Ok(bytes) => serde_json::from_slice(&bytes)
+                .map_err(|source| LocalError::InvalidConfig { path, source }),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(Vec::new()),
             Err(source) => Err(LocalError::Io { path, source }),
         }
@@ -320,7 +317,9 @@ pub fn validate_mcp_server(server: &McpServerConfig) -> Result<(), LocalError> {
                 ));
             }
             if arguments.len() > 256 || arguments.iter().any(|arg| arg.len() > 8192) {
-                return Err(LocalError::InvalidMcp("stdio arguments are too large".to_owned()));
+                return Err(LocalError::InvalidMcp(
+                    "stdio arguments are too large".to_owned(),
+                ));
             }
             for (target, source) in environment_references {
                 if !valid_env_name(target) || !valid_env_name(source) {
@@ -420,7 +419,9 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let store = LocalStore::new(temp.path());
         for index in 0..220 {
-            store.record_activity("test", &format!("entry {index}")).unwrap();
+            store
+                .record_activity("test", &format!("entry {index}"))
+                .unwrap();
         }
         let entries = store.activity().unwrap();
         assert_eq!(entries.len(), MAX_ACTIVITY_ENTRIES);

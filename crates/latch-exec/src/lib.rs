@@ -6,7 +6,7 @@ mod types;
 
 pub use error::ExecError;
 pub use managed::ProcessManager;
-pub use runner::{run_blocking, run_with_options};
+pub use runner::run_blocking;
 pub use types::{
     CommandSpec, ExecutionResult, ManagedOutput, ManagedStreamOutput, ProcessPoll, ProcessStart,
     ProcessState, ProcessStatus, RunOptions, ShutdownReport, DEFAULT_RUN_OUTPUT_BYTES,

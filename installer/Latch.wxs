@@ -19,10 +19,12 @@
     <StandardDirectory Id="LocalAppDataFolder">
       <Directory Id="ProgramsFolder" Name="Programs">
         <Directory Id="INSTALLFOLDER" Name="Latch">
-          <Component Id="ApplicationFiles" Guid="*">
+          <Component Id="LatchCliFiles" Guid="*">
             <File Id="LatchCliExe" Source="$(SourceDir)\latch-link.exe" Name="latch.exe" KeyPath="yes" />
-            <File Id="LatchDesktopExe" Source="$(SourceDir)\LatchDesktop.exe" Name="LatchDesktop.exe" />
             <Environment Id="LatchPath" Name="PATH" Value="[INSTALLFOLDER]" Action="set" Part="last" System="no" />
+          </Component>
+          <Component Id="LatchDesktopFiles" Guid="*">
+            <File Id="LatchDesktopExe" Source="$(SourceDir)\LatchDesktop.exe" Name="LatchDesktop.exe" KeyPath="yes" />
           </Component>
         </Directory>
       </Directory>
@@ -46,7 +48,8 @@
     </StandardDirectory>
 
     <Feature Id="MainFeature" Title="Latch" Level="1">
-      <ComponentRef Id="ApplicationFiles" />
+      <ComponentRef Id="LatchCliFiles" />
+      <ComponentRef Id="LatchDesktopFiles" />
       <ComponentRef Id="StartMenuEntry" />
       <ComponentRef Id="StartupEntry" />
     </Feature>

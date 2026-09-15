@@ -224,7 +224,8 @@ fn daemon_exercises_v05_protocol_across_process_boundary() {
         other => panic!("unexpected exec.start response: {other:?}"),
     };
 
-    let mut saw_ready = match success(daemon.request("6", "exec.poll", &json!({"job_id": job_id}))) {
+    let mut saw_ready = match success(daemon.request("6", "exec.poll", &json!({"job_id": job_id})))
+    {
         ResponsePayload::ProcessPoll(response) => {
             assert!(matches!(response.state, ProcessStateResponse::Running));
             response.stdout.text.contains("ready")

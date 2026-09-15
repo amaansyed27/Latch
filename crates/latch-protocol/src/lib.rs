@@ -1,6 +1,6 @@
 use latch_core::{McpServerId, ProcessId, RootId, WorkspaceId};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 pub const PROTOCOL_VERSION: u16 = 2;
 
@@ -272,7 +272,7 @@ fn default_scroll_axis() -> ScrollAxisRequest {
 }
 
 fn empty_json_object() -> Value {
-    Value::Object(Default::default())
+    Value::Object(Map::default())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

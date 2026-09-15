@@ -7,11 +7,12 @@ members = [
     "crates/latch-engine",
     "crates/latch-daemon",
     "crates/latch-link",
+    "crates/latch-desktop",
 ]
 resolver = "2"
 
 [workspace.package]
-version = "0.4.2-beta.1"
+version = "0.4.5-beta.1"
 edition = "2021"
 license = "MIT"
 rust-version = "1.81"

@@ -9,9 +9,11 @@
 
     <CustomAction Id="StopLatch" FileRef="LatchCliExe" ExeCommand="stop" Execute="immediate" Return="ignore" />
     <CustomAction Id="StopLatchDesktop" Directory="SystemFolder" ExeCommand="taskkill.exe /IM LatchDesktop.exe /T /F" Execute="immediate" Return="ignore" />
+    <CustomAction Id="LaunchLatchDesktop" FileRef="LatchDesktopExe" ExeCommand="" Execute="immediate" Return="asyncNoWait" />
     <InstallExecuteSequence>
       <Custom Action="StopLatchDesktop" Before="StopLatch" Condition="REMOVE = &quot;ALL&quot;" />
       <Custom Action="StopLatch" Before="RemoveFiles" Condition="REMOVE = &quot;ALL&quot;" />
+      <Custom Action="LaunchLatchDesktop" After="InstallFinalize" Condition="NOT Installed AND NOT REMOVE" />
     </InstallExecuteSequence>
 
     <StandardDirectory Id="LocalAppDataFolder">

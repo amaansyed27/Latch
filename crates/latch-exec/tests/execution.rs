@@ -29,7 +29,7 @@ fn large_output_command() -> CommandSpec {
         [
             "-NoProfile",
             "-Command",
-            "$out = 'o' * 131072; $err = 'e' * 131072; [Console]::Out.Write($out); [Console]::Error.Write($err)",
+            "$stdoutText = -join ('o' * 65536); $stderrText = -join ('e' * 65536); [Console]::Out.Write($stdoutText); [Console]::Error.Write($stderrText)",
         ],
     )
 }

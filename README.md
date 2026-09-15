@@ -78,7 +78,7 @@ Verified in automated V0.5 testing:
 - local MCP tool calls
 - Router → `latch-link` → `latch-engine` relay behavior
 - public MCP → local MCP relay behavior
-- Windows test/build/MSI packaging
+- Windows tests, MSI metadata/payload verification, and clean install/uninstall smoke testing
 
 Supported through the generic MCP bridge but **not yet manually verified against the real third-party integration** in this beta:
 

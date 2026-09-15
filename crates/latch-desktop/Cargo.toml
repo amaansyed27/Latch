@@ -12,7 +12,11 @@ path = "src/main.rs"
 
 [target.'cfg(windows)'.dependencies]
 dirs.workspace = true
+latch-core = { path = "../latch-core" }
 latch-link = { path = "../latch-link" }
+latch-local = { path = "../latch-local" }
+latch-mcp-client = { path = "../latch-mcp-client" }
+rfd = "0.15"
 serde.workspace = true
 serde_json.workspace = true
 tauri = { version = "2", features = ["tray-icon"] }

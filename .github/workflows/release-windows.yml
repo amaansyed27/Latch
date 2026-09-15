@@ -12,9 +12,11 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Verify release ref
+        with:
+          ref: aa1fa7c3ccef498b094d53b461c6ba4fbb24b3fc
+      - name: Verify release source
         shell: pwsh
-        run: if ("${{ github.ref_name }}" -ne "publish/v0.4.5-beta.1") { throw "Unexpected release ref: ${{ github.ref_name }}" }
+        run: if ((git rev-parse HEAD).Trim() -ne "aa1fa7c3ccef498b094d53b461c6ba4fbb24b3fc") { throw "Release source is not the merged main commit." }
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -41,4 +43,4 @@ jobs:
       - name: Publish prerelease
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "v0.4.5-beta.1" artifacts/* --target "${{ github.sha }}" --prerelease --generate-notes --title "Latch v0.4.5-beta.1"
+        run: gh release create "v0.4.5-beta.1" artifacts/* --target "aa1fa7c3ccef498b094d53b461c6ba4fbb24b3fc" --prerelease --generate-notes --title "Latch v0.4.5-beta.1"

@@ -13,16 +13,16 @@ import { Feedback, Skeleton } from "./components/ui";
 import { AppLayout, PublicLayout } from "./layouts/layouts";
 import { bootstrap } from "./lib/api";
 import "./styles/app.css";
+
 const Landing = lazy(() => import("./pages/Landing"));
 const Auth = lazy(() => import("./pages/Auth"));
 const Devices = lazy(() => import("./pages/Devices"));
+const DownloadPage = lazy(() => import("./pages/Download"));
 const Info = lazy(() =>
   import("./pages/Info").then((m) => ({
     default: function InfoRoute() {
       const path = useLocation().pathname;
-      return path === "/download" ? (
-        <m.DownloadPage />
-      ) : path === "/connect-chatgpt" ? (
+      return path === "/connect-chatgpt" ? (
         <m.ConnectPage />
       ) : path === "/account" ? (
         <m.AccountPage />
@@ -36,6 +36,7 @@ const Info = lazy(() =>
     },
   })),
 );
+
 class ErrorBoundary extends Component<
   { children: ReactNode },
   { failed: boolean }
@@ -58,6 +59,7 @@ class ErrorBoundary extends Component<
     );
   }
 }
+
 function Frame({
   children,
   protect = false,
@@ -98,6 +100,7 @@ function Frame({
     <PublicLayout>{children}</PublicLayout>
   );
 }
+
 function App() {
   const location = useLocation();
   if (bootstrap?.error)
@@ -159,6 +162,14 @@ function App() {
             }
           />
           <Route
+            path="/download"
+            element={
+              <Frame>
+                <DownloadPage />
+              </Frame>
+            }
+          />
+          <Route
             path="/account"
             element={
               <Frame protect>
@@ -167,7 +178,6 @@ function App() {
             }
           />
           {[
-            "download",
             "connect-chatgpt",
             "security",
             "privacy",
@@ -204,6 +214,7 @@ function App() {
     </>
   );
 }
+
 createRoot(document.getElementById("root")!).render(
   <ErrorBoundary>
     <BrowserRouter>

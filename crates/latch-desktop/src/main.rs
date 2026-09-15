@@ -13,16 +13,23 @@ fn main() {
 #[cfg(windows)]
 mod windows_app {
     use std::{
+        collections::BTreeMap,
         fs,
         path::{Path, PathBuf},
         process::{Command, Output},
         time::Duration,
     };
 
+    use latch_core::{McpServerId, RootId};
     use latch_link::{
         default_device_id_path, load_device_credential, load_or_create_device_id, LinkClient,
         LinkConfig,
     };
+    use latch_local::{
+        ActivityEntry, LocalConfig, LocalStore, McpServerConfig, McpTransportConfig,
+    };
+    use latch_mcp_client::test_connection;
+    use rfd::FileDialog;
     use serde::{Deserialize, Serialize};
     use tauri::{
         menu::{MenuBuilder, MenuItemBuilder},
@@ -53,7 +60,31 @@ mod windows_app {
         state: String,
         router: String,
         paired: bool,
+        paused: bool,
         updated_at: Option<u64>,
+    }
+
+    #[derive(Debug, Clone, Serialize)]
+    struct DesktopLocalState {
+        config: LocalConfig,
+        activity: Vec<ActivityEntry>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct McpInput {
+        server_id: Option<String>,
+        display_name: String,
+        transport: String,
+        #[serde(default)]
+        command: String,
+        #[serde(default)]
+        arguments: Vec<String>,
+        #[serde(default)]
+        environment_references: BTreeMap<String, String>,
+        #[serde(default)]
+        url: String,
+        enabled: bool,
+        allow_remote: bool,
     }
 
     pub fn run() {
@@ -68,6 +99,15 @@ mod windows_app {
                 pair,
                 restart,
                 run_diagnostics,
+                local_state,
+                add_folder,
+                remove_folder,
+                set_permission,
+                set_paused,
+                save_mcp,
+                remove_mcp,
+                test_mcp,
+                clear_activity,
                 open_devices,
                 open_dashboard,
                 open_logs,
@@ -76,12 +116,16 @@ mod windows_app {
             ])
             .setup(move |app| {
                 let open = MenuItemBuilder::with_id("open", "Open Latch").build(app)?;
-                let devices = MenuItemBuilder::with_id("devices", "Manage devices").build(app)?;
+                let connection = MenuItemBuilder::with_id("connection", "Connection status")
+                    .enabled(false)
+                    .build(app)?;
+                let pause =
+                    MenuItemBuilder::with_id("pause", "Pause remote access").build(app)?;
                 let restart =
                     MenuItemBuilder::with_id("restart", "Restart connection").build(app)?;
                 let quit = MenuItemBuilder::with_id("quit", "Quit Latch").build(app)?;
                 let menu = MenuBuilder::new(app)
-                    .items(&[&open, &devices, &restart, &quit])
+                    .items(&[&open, &connection, &pause, &restart, &quit])
                     .build()?;
 
                 TrayIconBuilder::with_id("latch")
@@ -95,8 +139,11 @@ mod windows_app {
                     .show_menu_on_left_click(false)
                     .on_menu_event(|app, event| match event.id().as_ref() {
                         "open" => show_window(app),
-                        "devices" => {
-                            let _ = open_url(DEVICES_URL);
+                        "pause" => {
+                            if let Ok(store) = local_store() {
+                                let _ = store.set_paused(true);
+                            }
+                            show_window(app);
                         }
                         "restart" => {
                             let _ = run_cli(&["restart"]);
@@ -151,6 +198,10 @@ mod windows_app {
         dirs::data_local_dir()
             .unwrap_or_else(std::env::temp_dir)
             .join("Latch")
+    }
+
+    fn local_store() -> Result<LocalStore, String> {
+        LocalStore::default_location().map_err(|error| error.to_string())
     }
 
     fn cli_path() -> Result<PathBuf, String> {
@@ -223,6 +274,9 @@ mod windows_app {
         let config = LinkConfig::from_env().ok();
         let mut file = read_status_file(&local_app_dir().join("status.json"));
         let paired = is_paired();
+        let paused = local_store()
+            .and_then(|store| store.load().map_err(|error| error.to_string()))
+            .is_ok_and(|local| local.paused);
 
         if let Some(status) = file.as_mut() {
             if status.state != "unpaired" && !process_exists(status.pid) {
@@ -250,23 +304,39 @@ mod windows_app {
                 .as_ref()
                 .map_or(fallback_name, |value| value.device_name.clone()),
             device_id: file.as_ref().map(|value| value.device_id.clone()),
-            state: if paired {
+            state: if !paired {
+                "unpaired".to_owned()
+            } else if paused {
+                "paused".to_owned()
+            } else {
                 file.as_ref()
                     .map_or_else(|| "starting".to_owned(), |value| value.state.clone())
-            } else {
-                "unpaired".to_owned()
             },
             router: file
                 .as_ref()
                 .map_or(fallback_router, |value| value.router.clone()),
             paired,
+            paused,
             updated_at: file.as_ref().map(|value| value.updated_at),
         }
+    }
+
+    fn local_snapshot() -> Result<DesktopLocalState, String> {
+        let store = local_store()?;
+        Ok(DesktopLocalState {
+            config: store.load().map_err(|error| error.to_string())?,
+            activity: store.activity().map_err(|error| error.to_string())?,
+        })
     }
 
     #[tauri::command]
     fn status() -> DesktopStatus {
         status_snapshot()
+    }
+
+    #[tauri::command]
+    fn local_state() -> Result<DesktopLocalState, String> {
+        local_snapshot()
     }
 
     #[tauri::command]
@@ -295,9 +365,136 @@ mod windows_app {
     }
 
     #[tauri::command]
+    fn add_folder() -> Result<DesktopLocalState, String> {
+        let Some(path) = FileDialog::new()
+            .set_title("Approve a folder for Latch")
+            .pick_folder()
+        else {
+            return local_snapshot();
+        };
+        local_store()?
+            .add_root(path)
+            .map_err(|error| error.to_string())?;
+        local_snapshot()
+    }
+
+    #[tauri::command]
+    fn remove_folder(root_id: String) -> Result<DesktopLocalState, String> {
+        let root_id = root_id
+            .parse::<RootId>()
+            .map_err(|_| "Invalid folder ID.".to_owned())?;
+        local_store()?
+            .remove_root(root_id)
+            .map_err(|error| error.to_string())?;
+        local_snapshot()
+    }
+
+    #[tauri::command]
+    fn set_permission(permission: String, enabled: bool) -> Result<DesktopLocalState, String> {
+        let store = local_store()?;
+        let mut config = store.load().map_err(|error| error.to_string())?;
+        match permission.as_str() {
+            "files" => config.permissions.files = enabled,
+            "commands" => config.permissions.commands = enabled,
+            "screen" => config.permissions.screen = enabled,
+            "computer_control" => config.permissions.computer_control = enabled,
+            "mcp_discovery" => config.permissions.mcp_discovery = enabled,
+            "mcp_execution" => config.permissions.mcp_execution = enabled,
+            _ => return Err("Unknown local permission.".to_owned()),
+        }
+        store
+            .set_permissions(config.permissions)
+            .map_err(|error| error.to_string())?;
+        local_snapshot()
+    }
+
+    #[tauri::command]
+    fn set_paused(paused: bool) -> Result<DesktopLocalState, String> {
+        local_store()?
+            .set_paused(paused)
+            .map_err(|error| error.to_string())?;
+        local_snapshot()
+    }
+
+    #[tauri::command]
+    fn save_mcp(input: McpInput) -> Result<DesktopLocalState, String> {
+        let server_id = match input.server_id.as_deref() {
+            Some(value) if !value.trim().is_empty() => value
+                .parse::<McpServerId>()
+                .map_err(|_| "Invalid MCP server ID.".to_owned())?,
+            _ => McpServerId::new(),
+        };
+        let transport = match input.transport.as_str() {
+            "stdio" => McpTransportConfig::Stdio {
+                command: input.command,
+                arguments: input.arguments,
+                environment_references: input.environment_references,
+            },
+            "http" => McpTransportConfig::Http { url: input.url },
+            _ => return Err("MCP transport must be stdio or http.".to_owned()),
+        };
+        local_store()?
+            .upsert_mcp_server(McpServerConfig {
+                server_id,
+                display_name: input.display_name,
+                transport,
+                enabled: input.enabled,
+                allow_remote: input.allow_remote,
+            })
+            .map_err(|error| error.to_string())?;
+        local_snapshot()
+    }
+
+    #[tauri::command]
+    fn remove_mcp(server_id: String) -> Result<DesktopLocalState, String> {
+        let server_id = server_id
+            .parse::<McpServerId>()
+            .map_err(|_| "Invalid MCP server ID.".to_owned())?;
+        local_store()?
+            .remove_mcp_server(server_id)
+            .map_err(|error| error.to_string())?;
+        local_snapshot()
+    }
+
+    #[tauri::command]
+    async fn test_mcp(server_id: String) -> Result<String, String> {
+        let server_id = server_id
+            .parse::<McpServerId>()
+            .map_err(|_| "Invalid MCP server ID.".to_owned())?;
+        let store = local_store()?;
+        let server = store
+            .load()
+            .map_err(|error| error.to_string())?
+            .mcp_servers
+            .into_iter()
+            .find(|server| server.server_id == server_id)
+            .ok_or_else(|| "Local MCP server not found.".to_owned())?;
+        let count = tokio::task::spawn_blocking(move || test_connection(&server))
+            .await
+            .map_err(|error| error.to_string())?
+            .map_err(|error| error.to_string())?;
+        Ok(format!("Connected. {count} tool(s) available."))
+    }
+
+    #[tauri::command]
+    fn clear_activity() -> Result<DesktopLocalState, String> {
+        local_store()?
+            .clear_activity()
+            .map_err(|error| error.to_string())?;
+        local_snapshot()
+    }
+
+    #[tauri::command]
     fn run_diagnostics() -> Result<String, String> {
         let output = run_cli(&["doctor"])?;
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+        let doctor = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        let local = local_snapshot()?;
+        Ok(format!(
+            "{doctor}\nApproved folders          {}\nLocal MCP integrations    {}\nRemote access             {}",
+            local.config.roots.len(),
+            local.config.mcp_servers.len(),
+            if local.config.paused { "PAUSED" } else { "enabled" }
+        ))
     }
 
     #[tauri::command]

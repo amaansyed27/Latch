@@ -1,0 +1,89 @@
+name: V0.5 CI blocker fix
+
+on:
+  push:
+    branches: ["feat/v0.5-complete-local-agent"]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/v0.5-complete-local-agent
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Apply targeted source fixes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          desktop = Path('crates/latch-desktop/src/main.rs')
+          text = desktop.read_text()
+          text = text.replace(
+              '                let pause =\n                    MenuItemBuilder::with_id("pause", "Pause remote access").build(app)?;\n',
+              '                let pause = MenuItemBuilder::with_id("pause", "Pause remote access").build(app)?;\n',
+              1,
+          )
+          desktop.write_text(text)
+
+          computer = Path('crates/latch-computer/src/lib.rs')
+          text = computer.read_text()
+          text = text.replace('use winsafe::{prelude::*, HWND};', 'use winsafe::HWND;', 1)
+          old = '''                Some(Ok(RawWindow {
+                    native_id: window.id().map_err(operation)?,
+                    title,
+                    process_name: window.app_name().unwrap_or_default(),
+                    x: window.x().map_err(operation)?,
+                    y: window.y().map_err(operation)?,
+                    width: window.width().map_err(operation)?,
+                    height: window.height().map_err(operation)?,
+                    focused: window.is_focused().unwrap_or(false),
+                    minimized: window.is_minimized().unwrap_or(false),
+                }))'''
+          new = '''                Some((|| {
+                    Ok(RawWindow {
+                        native_id: window.id().map_err(operation)?,
+                        title,
+                        process_name: window.app_name().unwrap_or_default(),
+                        x: window.x().map_err(operation)?,
+                        y: window.y().map_err(operation)?,
+                        width: window.width().map_err(operation)?,
+                        height: window.height().map_err(operation)?,
+                        focused: window.is_focused().unwrap_or(false),
+                        minimized: window.is_minimized().unwrap_or(false),
+                    })
+                })())'''
+          if old not in text:
+              raise SystemExit('expected Windows enumeration block not found')
+          computer.write_text(text.replace(old, new, 1))
+
+          mcp = Path('router/src/mcp-server.ts')
+          text = mcp.read_text()
+          text = text.replace(
+              '    async ({ device_id, server_id, tool_name, arguments }) =>\n      relayTool(config, coordinator, ready, principal, authorizationStore, \'latch:mcp:call\', device_id, \'mcp.call\', {\n        server_id,\n        tool_name,\n        arguments,\n      }),',
+              '    async ({ device_id, server_id, tool_name, arguments: toolArguments }) =>\n      relayTool(config, coordinator, ready, principal, authorizationStore, \'latch:mcp:call\', device_id, \'mcp.call\', {\n        server_id,\n        tool_name,\n        arguments: toolArguments,\n      }),',
+              1,
+          )
+          text = text.replace(
+              '  const content: Array<Record<string, unknown>> = [];',
+              "  const content: Array<{ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }> = [];",
+              1,
+          )
+          mcp.write_text(text)
+      - name: Format Rust
+        run: cargo fmt --all
+      - name: Commit fixes
+        shell: bash
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates/latch-desktop/src/main.rs crates/latch-computer/src/lib.rs router/src/mcp-server.ts
+          git commit -m "fix: clear v0.5 compile and type blockers"
+          git push origin HEAD:feat/v0.5-complete-local-agent

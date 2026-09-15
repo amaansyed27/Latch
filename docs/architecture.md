@@ -1,126 +1,214 @@
 # Latch Architecture
 
-## V0.2 scope
+## V0.5 overview
 
-V0.2 adds a secure remote relay around the V0.1 local engine. The Router is a control plane; it never executes commands or performs local filesystem operations.
+Latch V0.5 lets an authorized ChatGPT session, Codex session, or other compatible MCP client use capabilities on a computer the user has explicitly paired and configured.
 
 ```text
-future ChatGPT Plugin
+ChatGPT / Codex / MCP client
+        |
+        | HTTPS Streamable HTTP + OAuth
+        v
+https://latch-router.vercel.app/mcp
         |
         v
-   Vercel Router
+      Router
         |
-        | outbound WebSocket from device
+        | Redis presence + request/response routing
         v
-     latch-link
+outbound TLS WebSocket from the user's computer
         |
         v
-    latch-engine
-     /   |    \
-latch-fs latch-exec latch-protocol
+    latch-link
         |
-   latch-daemon
-    (stdio adapter)
+        v
+   latch-engine
+   /    |      |        \
+ files process computer local MCP
 ```
 
-`latch-daemon` and `latch-link` are transport adapters over the same `latch-engine`. The original stdin/stdout protocol remains supported.
+The Router is a thin authenticated routing/control plane. It is not a build host, shell host, filesystem store, or durable store for tool payloads. Local execution remains on the paired computer.
 
-## Crate boundaries
+## Authentication and routing
+
+The public MCP endpoint uses OAuth. OAuth scopes are separated by capability, including devices, approved roots, files, commands, screen access, computer control, and local MCP access.
+
+OAuth authorization is necessary but not sufficient. The local permission state on the paired computer is an additional deny layer and takes precedence over OAuth grants.
+
+The Router authenticates the caller, verifies ownership of the selected device, and relays a typed request to the device that currently owns the outbound connection. Redis provides expiring device presence and request/response coordination so routing does not depend on one Vercel Function instance retaining a particular request.
+
+The device connection is outbound-only. `latch-link` opens a TLS WebSocket to the Router; Latch does not require an inbound local port or expose localhost to the public internet.
+
+## Protocol
+
+V0.5 uses Latch protocol version **2**.
+
+The protocol contains typed request/response DTOs and stable error codes for approved roots, filesystem operations, managed processes, computer use, and local MCP access. The Router does not expose a generic raw-protocol passthrough tool.
+
+Normal remote workspace opening accepts:
+
+- `root_id`
+- optional `relative_path`
+
+It does **not** accept an arbitrary absolute filesystem path.
+
+A legacy raw absolute-workspace request exists only as a local/developer compatibility path. It is controlled by the local `legacy_absolute_workspaces` setting, defaults to `false`, and is not exposed by the normal ChatGPT-facing MCP tool schema.
+
+## Local authority and approved roots
+
+Approved roots are configured locally in Latch Desktop. Each approved root has an opaque `root_id`, display name, and canonical local path. Remote clients receive only the opaque ID and display name.
+
+When an approved workspace is opened:
+
+1. `latch-engine` resolves the requested `root_id` from current local configuration.
+2. An optional relative subpath is validated.
+3. The selected path is canonicalized and must remain inside the approved root.
+4. `latch-fs` performs capability-relative operations through `cap_std`.
+5. Absolute paths, parent traversal, drive/UNC escapes, and known symlink/junction escapes are rejected.
+6. Later workspace operations re-check that the root is still approved. Removing the root invalidates the workspace.
+
+Unexpected canonicalization failures fail closed rather than being treated as safe.
+
+## Local permission model
+
+Local permissions are persisted on the paired computer and checked on every relevant operation. V0.5 defaults are:
+
+| Capability | Default |
+| --- | --- |
+| Files | ON |
+| Commands | ON |
+| Screen | OFF |
+| Computer control | OFF |
+| MCP discovery | OFF |
+| MCP execution | OFF |
+
+`Pause remote access` is another local deny switch. Pausing does not delete pairing; it causes new remote operations to be rejected locally.
+
+Disabling a permission or removing an approved root takes effect independently of previously granted OAuth scopes. Already-running child processes are not automatically terminated solely because a later permission/root change occurred.
+
+## Filesystem
+
+`latch-fs` owns workspace-relative file access, including listing, stat, bounded reads, create/overwrite writes, deterministic patching, search, directory creation, move, and delete.
+
+Filesystem confinement applies to Latch filesystem operations. It is not an operating-system sandbox for arbitrary programs.
+
+## Processes
+
+`latch-exec` owns blocking and managed process execution, including start, poll, stdin, output retention, and termination.
+
+Commands are **not sandboxed**. They execute with the operating-system permissions of the local user running Latch. A command started inside an approved workspace can still access other resources that the same Windows user could access directly.
+
+Process lifecycle control uses Windows Job Objects or POSIX process groups where supported. Output is bounded to avoid unbounded in-memory growth.
+
+## Computer use
+
+`latch-computer` owns display discovery, window discovery, explicit screenshots, focus, mouse movement/click/drag, scrolling, key input, and typing.
+
+Screen and control permissions are separate. Screen capture is performed only when the screenshot tool is explicitly invoked. Latch does not periodically capture the desktop. Screenshot bytes are encoded in memory for the response and are not intentionally persisted by the Router.
+
+Windows is the current primary computer-use implementation. Unsupported platforms return a stable `computer_unavailable`/unsupported result rather than pretending the action succeeded.
+
+## Local MCP bridge
+
+`latch-mcp-client` is a generic client for user-configured local MCP servers. V0.5 supports:
+
+- stdio MCP transports
+- Streamable HTTP MCP transports
+- server discovery/status exposure through Latch
+- tool discovery
+- tool invocation
+
+Local MCP configuration stays on the paired computer. The Router receives only the results needed for an authorized request; it does not become the configuration store for the user's local MCP servers.
+
+For stdio servers, environment configuration stores **environment-variable references**, not raw secret values. Secret values are resolved from the local environment only when the server is launched.
+
+Each local MCP server also has local `enabled` and `allow_remote` controls. Generic bridge behavior is verified by automated MCP fixtures and relay E2E tests. Specific third-party integrations such as Blender MCP and browser/Playwright MCP use this same generic bridge but require their own manual compatibility validation.
+
+## Crate and package boundaries
 
 ### `latch-core`
 
-Owns `Workspace`, `WorkspaceId`, `ProcessId`, and `DeviceId` domain identity. Workspace roots are canonicalized once when opened.
+Shared domain identities and core workspace/device types, including opaque workspace/root/process/device identifiers.
+
+### `latch-local`
+
+Persistent local authority: approved roots, capability permissions, pause state, local MCP configuration, and bounded activity metadata.
 
 ### `latch-fs`
 
-Owns Latch-native filesystem operations through a `cap_std::fs::Dir`. User paths must remain relative; absolute paths, parent traversal, and known symlink/junction escapes are rejected.
+Capability-confined filesystem primitives for an opened workspace.
 
 ### `latch-exec`
 
-Owns local process execution. `exec.run` uses process groups, concurrently drained bounded stdout/stderr, a five-minute default timeout, and one MiB retained independently per stream. Managed processes support start/status/output/kill and manager-wide cleanup.
+Blocking and managed local process execution, bounded output, stdin, polling, and process-tree termination.
+
+### `latch-computer`
+
+Local display/window discovery, explicit screenshots, and Windows mouse/keyboard control.
+
+### `latch-mcp-client`
+
+Generic local MCP client for stdio and Streamable HTTP transports.
 
 ### `latch-protocol`
 
-Contains the versioned transport-neutral execution DTOs. V0.2 keeps protocol version 1 and does not duplicate these method types in the Router.
+Transport-neutral protocol version 2 request/response DTOs and stable error codes.
 
 ### `latch-engine`
 
-Composes workspace state, `latch-fs`, `latch-exec`, and `latch-protocol`. It owns request execution and stable implementation-to-protocol error mapping. This is the small extraction from the V0.1 daemon that lets multiple transports reuse exactly the same local behavior.
-
-### `latch-daemon`
-
-Preserves the V0.1 newline-delimited stdin/stdout transport. It parses lines, delegates typed envelopes to `latch-engine`, writes protocol responses, and explicitly shuts the Engine down on transport exit.
+The local execution authority. It composes local configuration, approved-root validation, filesystem/process/computer/MCP capabilities, permission checks, activity recording, and protocol error mapping.
 
 ### `latch-link`
 
-Owns only remote-connection concerns: persisted `DeviceId`, configuration, authentication handshake, WebSocket lifecycle, request routing envelope, and bounded reconnect backoff. It does not implement filesystem or execution behavior.
+The outbound remote transport. It owns device identity/credential use, WebSocket lifecycle, reconnect behavior, and delivery of Router requests to `latch-engine`. It does not reimplement capability logic.
 
-The local connection is outbound-only. `https` Router URLs are upgraded to `wss` and no inbound local port is opened.
+### `latch-desktop`
+
+Windows tray/desktop UI for pairing, approved folders, local MCP configuration, permission switches, pause/resume, activity, and diagnostics.
+
+### `latch-daemon`
+
+Compatibility stdin/stdout transport over the same `latch-engine`. It is not the primary V0.5 user experience.
 
 ### `router/`
 
-The TypeScript Vercel control plane exposes health/device/request HTTP APIs and accepts authenticated device WebSockets. It uses Redis for expiring device presence plus pub/sub dispatch/response correlation because a later HTTP Function invocation is not guaranteed to run on the Function instance holding a device socket.
+TypeScript MCP/OAuth/website control plane deployed to Vercel. It owns OAuth, device ownership checks, MCP tool schemas, rate limiting, and relay coordination. Redis is used for transient routing/presence. The Router is intentionally not a local build executor or durable project/file store.
 
-## Dependency direction
+## End-to-end request path
 
-```text
-latch-core <- latch-fs
-    ^        latch-exec
-    +------- latch-protocol
-       \       |       /
-          latch-engine
-          /          \
- latch-daemon      latch-link
-```
+A normal remote operation follows this sequence:
 
-The Router has no Rust crate dependency and treats the nested Latch protocol envelope as transport-neutral JSON.
+1. The MCP client connects to `/mcp` and authorizes requested OAuth scopes.
+2. The Router authenticates the OAuth principal and checks the scope required by the selected tool.
+3. Device ownership is verified before relay dispatch.
+4. The Router publishes/routes the request to the currently connected device.
+5. `latch-link` receives the request over its outbound TLS WebSocket.
+6. `latch-engine` reloads current local authority and enforces pause, approved-root state, and local permissions.
+7. The relevant local capability executes.
+8. The typed result returns over the same relay path to the MCP client.
 
-## Workspace security model
+Returned file contents, command output, screenshots, and local MCP output are untrusted data. They are tool results, not policy or instructions for Latch itself.
 
-An explicitly opened directory is the Latch filesystem capability boundary:
+## Persistence boundaries
 
-1. `Workspace` canonicalizes the selected root.
-2. `latch-fs` opens the root as a capability directory.
-3. Latch filesystem paths must be relative and may not contain `..`, drive/UNC roots, or absolute roots.
-4. Known symlink/junction escapes are rejected and actual operations remain capability-relative.
+Persisted locally:
 
-Adding remote transport does not weaken this boundary.
+- approved roots
+- local permission state
+- local MCP configuration
+- device identity and credential material
+- bounded activity/diagnostic state
 
-## Important execution boundary
+Persisted by the control plane as required for accounts/authorization:
 
-Latch does **not** OS-sandbox arbitrary child processes. Commands start in the selected workspace but retain the operating-system permissions of the local user. This remains true whether a request arrives over stdio or through the authenticated Router.
+- account identity
+- paired-device metadata
+- OAuth grants/tokens in protected/hashed form as applicable
 
-Therefore filesystem permission and command permission are not equivalent. V0.2 pairing/control secrets authorize access to the existing protocol; they are not a final fine-grained permission system.
+Transient routing data:
 
-## Execution lifecycle
+- device presence
+- request/response coordination
+- rate-limit state
 
-Blocking and managed execution use a Windows Job Object or POSIX process group. Timeout/kill targets the group, and managed processes are terminated/reaped on Engine shutdown. On Unix, a process deliberately creating a new session/group may escape this lifecycle boundary; process groups are not presented as a full sandbox.
-
-`latch-link` executes Engine requests on Tokio's blocking pool behind a small serialized Engine lock. This keeps WebSocket ping/pong and reconnect traffic responsive while synchronous local work is running.
-
-## Remote routing model
-
-A Router request contains the existing `RequestEnvelope`. The relay adds its own UUID `request_id` only for routing/correlation. Device responses return the same `request_id` plus the existing typed `ResponseEnvelope`.
-
-Redis presence identifies the Vercel Function instance and connection that currently holds a device WebSocket. Dispatch is published to that instance. Responses are published on a request-specific channel and resolve only the matching pending HTTP request. Pending state is cleared on success, timeout, coordinator shutdown, or device disconnect.
-
-## Authentication model
-
-V0.2 uses two environment-provided random secrets:
-
-- a pairing token for device WebSocket authentication
-- a control token for Router device/request APIs
-
-Secrets use timing-safe digest comparison and are excluded from normal logs/errors. TLS is provided by the Vercel `https`/`wss` endpoint.
-
-There are no accounts, OAuth, billing, or per-method consent controls in V0.2.
-
-## Known V0.2 limits
-
-- workspaces and process records are still local in-memory state
-- device presence is ephemeral, not durable history
-- the proof-scale Redis registry is not designed as a large device directory
-- command execution inherits local user OS permissions
-- V0.2 has no final user permission/consent UI
-- the Router request timeout can expire before the local execution timeout
-- ChatGPT integration is intentionally deferred
+Project files, screenshots, command output, and local MCP configuration are not intentionally stored as durable Router data.

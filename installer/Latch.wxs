@@ -1,10 +1,16 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package Name="Latch" Manufacturer="Latch" Version="0.4.2" UpgradeCode="6B9638AD-38B8-4EA2-88EF-76D9961EBC4C" Scope="perUser">
+  <Package Name="Latch" Manufacturer="Latch" Version="0.4.5" UpgradeCode="6B9638AD-38B8-4EA2-88EF-76D9961EBC4C" Scope="perUser">
     <SummaryInformation Description="Latch private beta for Windows" />
     <MajorUpgrade DowngradeErrorMessage="A newer version of Latch is already installed." />
     <MediaTemplate EmbedCab="yes" />
-    <CustomAction Id="StopLatch" FileRef="LatchExe" ExeCommand="stop" Execute="immediate" Return="ignore" />
+
+    <Icon Id="LatchIcon" SourceFile="$(IconDir)\icon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="LatchIcon" />
+
+    <CustomAction Id="StopLatch" FileRef="LatchCliExe" ExeCommand="stop" Execute="immediate" Return="ignore" />
+    <CustomAction Id="StopLatchDesktop" Directory="SystemFolder" ExeCommand="taskkill.exe /IM LatchDesktop.exe /T /F" Execute="immediate" Return="ignore" />
     <InstallExecuteSequence>
+      <Custom Action="StopLatchDesktop" Before="StopLatch" Condition="REMOVE = &quot;ALL&quot;" />
       <Custom Action="StopLatch" Before="RemoveFiles" Condition="REMOVE = &quot;ALL&quot;" />
     </InstallExecuteSequence>
 
@@ -12,26 +18,34 @@
       <Directory Id="ProgramsFolder" Name="Programs">
         <Directory Id="INSTALLFOLDER" Name="Latch">
           <Component Id="ApplicationFiles" Guid="*">
-            <File Id="LatchExe" Source="$(SourceDir)\latch-link.exe" Name="latch.exe" KeyPath="yes" />
+            <File Id="LatchCliExe" Source="$(SourceDir)\latch-link.exe" Name="latch.exe" KeyPath="yes" />
+            <File Id="LatchDesktopExe" Source="$(SourceDir)\LatchDesktop.exe" Name="LatchDesktop.exe" />
             <Environment Id="LatchPath" Name="PATH" Value="[INSTALLFOLDER]" Action="set" Part="last" System="no" />
-          </Component>
-          <Component Id="StartupScript" Guid="*">
-            <File Id="LatchStartupScript" Source="$(InstallerDir)\latch-start.vbs" Name="latch-start.vbs" KeyPath="yes" />
           </Component>
         </Directory>
       </Directory>
     </StandardDirectory>
 
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="Latch">
+        <Component Id="StartMenuEntry" Guid="*">
+          <Shortcut Id="LatchStartMenu" Name="Latch" Description="Open Latch" Target="[INSTALLFOLDER]LatchDesktop.exe" WorkingDirectory="INSTALLFOLDER" Icon="LatchIcon" />
+          <RemoveFolder Id="RemoveLatchProgramMenu" On="uninstall" />
+          <RegistryValue Root="HKCU" Key="Software\Latch" Name="StartMenu" Type="integer" Value="1" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
     <StandardDirectory Id="StartupFolder">
       <Component Id="StartupEntry" Guid="*">
-        <Shortcut Id="LatchStartup" Name="Latch" Target="[SystemFolder]wscript.exe" Arguments="&quot;[INSTALLFOLDER]latch-start.vbs&quot;" WorkingDirectory="INSTALLFOLDER" />
+        <Shortcut Id="LatchStartup" Name="Latch" Target="[INSTALLFOLDER]LatchDesktop.exe" Arguments="--startup" WorkingDirectory="INSTALLFOLDER" Icon="LatchIcon" />
         <RegistryValue Root="HKCU" Key="Software\Latch" Name="Startup" Type="integer" Value="1" KeyPath="yes" />
       </Component>
     </StandardDirectory>
 
     <Feature Id="MainFeature" Title="Latch" Level="1">
       <ComponentRef Id="ApplicationFiles" />
-      <ComponentRef Id="StartupScript" />
+      <ComponentRef Id="StartMenuEntry" />
       <ComponentRef Id="StartupEntry" />
     </Feature>
   </Package>

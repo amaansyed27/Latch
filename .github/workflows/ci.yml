@@ -34,18 +34,58 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace
       - run: cargo build --workspace
+      - name: Verify WiX V0.5 metadata
+        shell: pwsh
+        run: |
+          [xml]$wix = Get-Content 'installer\Latch.wxs' -Raw
+          $package = $wix.SelectSingleNode("//*[local-name()='Package']")
+          if (-not $package) { throw 'WiX Package element missing' }
+          if ($package.Version -ne '0.5.0') { throw "Unexpected WiX Version: $($package.Version)" }
+          if ($package.UpgradeCode -ne '6B9638AD-38B8-4EA2-88EF-76D9961EBC4C') { throw "Unexpected UpgradeCode: $($package.UpgradeCode)" }
       - name: Install WiX
         run: dotnet tool install --global wix --version 4.0.6 --add-source https://api.nuget.org/v3/index.json
       - name: Build Windows installer
         run: ./scripts/build-windows-installer.ps1
-      - name: Verify MSI contains tray app and CLI
+      - name: Verify MSI metadata and payload
         shell: pwsh
         run: |
+          $msi = (Resolve-Path 'artifacts\LatchSetup-x64.msi').Path
+          $installer = New-Object -ComObject WindowsInstaller.Installer
+          $database = $installer.OpenDatabase($msi, 0)
+          $view = $database.OpenView("SELECT ``Value`` FROM ``Property`` WHERE ``Property``='ProductVersion'")
+          $view.Execute()
+          $record = $view.Fetch()
+          if (-not $record) { throw 'MSI ProductVersion missing' }
+          $productVersion = $record.StringData(1)
+          if ($productVersion -ne '0.5.0') { throw "Unexpected MSI ProductVersion: $productVersion" }
+          $view.Close()
+
           $extract = Join-Path $env:RUNNER_TEMP 'latch-msi'
-          $process = Start-Process msiexec.exe -ArgumentList '/a', 'artifacts\LatchSetup-x64.msi', '/qn', "TARGETDIR=$extract" -Wait -PassThru
+          $process = Start-Process msiexec.exe -ArgumentList '/a', "`"$msi`"", '/qn', "TARGETDIR=`"$extract`"" -Wait -PassThru
           if ($process.ExitCode) { throw "MSI extraction failed with $($process.ExitCode)" }
-          if (-not (Get-ChildItem $extract -Filter latch.exe -Recurse | Select-Object -First 1)) { throw 'latch.exe missing' }
-          if (-not (Get-ChildItem $extract -Filter LatchDesktop.exe -Recurse | Select-Object -First 1)) { throw 'LatchDesktop.exe missing' }
+          $cli = Get-ChildItem $extract -Filter latch.exe -Recurse | Select-Object -First 1
+          $desktop = Get-ChildItem $extract -Filter LatchDesktop.exe -Recurse | Select-Object -First 1
+          if (-not $cli) { throw 'latch.exe missing' }
+          if (-not $desktop) { throw 'LatchDesktop.exe missing' }
+          $version = & $cli.FullName --version
+          if ($version -ne 'latch 0.5.0-beta.1') { throw "Unexpected binary version: $version" }
+      - name: Smoke-test clean MSI install and uninstall
+        shell: pwsh
+        run: |
+          $msi = (Resolve-Path 'artifacts\LatchSetup-x64.msi').Path
+          $install = Start-Process msiexec.exe -ArgumentList '/i', "`"$msi`"", '/qn', '/norestart' -Wait -PassThru
+          if ($install.ExitCode) { throw "MSI install failed with $($install.ExitCode)" }
+          $installDir = Join-Path $env:LOCALAPPDATA 'Programs\Latch'
+          $cli = Join-Path $installDir 'latch.exe'
+          $desktop = Join-Path $installDir 'LatchDesktop.exe'
+          if (-not (Test-Path $cli)) { throw 'Installed latch.exe missing' }
+          if (-not (Test-Path $desktop)) { throw 'Installed LatchDesktop.exe missing' }
+          $version = & $cli --version
+          if ($version -ne 'latch 0.5.0-beta.1') { throw "Unexpected installed version: $version" }
+          $uninstall = Start-Process msiexec.exe -ArgumentList '/x', "`"$msi`"", '/qn', '/norestart' -Wait -PassThru
+          if ($uninstall.ExitCode) { throw "MSI uninstall failed with $($uninstall.ExitCode)" }
+          if (Test-Path $cli) { throw 'latch.exe remained after uninstall' }
+          if (Test-Path $desktop) { throw 'LatchDesktop.exe remained after uninstall' }
       - name: Upload Windows beta artifact
         uses: actions/upload-artifact@v4
         with:

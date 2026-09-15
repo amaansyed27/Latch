@@ -11,7 +11,7 @@ Latch gives ChatGPT, Codex, and compatible MCP clients explicit access to a comp
 1. Visit [latch-router.vercel.app/download](https://latch-router.vercel.app/download).
 2. Download and run `LatchSetup-x64.msi` on Windows 10 or 11 (x64).
 3. Open **Latch** from the Start menu.
-4. Sign in on the Latch website, choose **Add computer**, generate a pairing code, and paste it into the Latch app.
+4. Sign in on the Latch website, choose **Add computer**, generate a pairing code, and paste it into Latch Desktop.
 5. In the desktop app, approve the folders and capabilities you want Latch to expose.
 
 Latch installs per user under `%LOCALAPPDATA%\Programs\Latch`, lives in the Windows system tray, and starts automatically after sign-in. Closing the window keeps Latch running in the tray. **Quit Latch** disconnects it.
@@ -66,6 +66,26 @@ list computers
 ```
 
 Computer-use and local-MCP tools are available only when both OAuth authorization and the corresponding local permission allow them.
+
+## Validation status
+
+Verified in automated V0.5 testing:
+
+- stdio MCP client support
+- Streamable HTTP MCP client support
+- local MCP server discovery
+- local MCP tool discovery
+- local MCP tool calls
+- Router → `latch-link` → `latch-engine` relay behavior
+- public MCP → local MCP relay behavior
+- Windows test/build/MSI packaging
+
+Supported through the generic MCP bridge but **not yet manually verified against the real third-party integration** in this beta:
+
+- Blender MCP
+- Playwright/browser MCP
+
+The release is not blocked on those third-party manual checks because they do not require a separate Latch subsystem; they use the same generic local MCP bridge.
 
 ## Security boundary
 
@@ -132,6 +152,8 @@ dotnet tool install --global wix --version 4.0.6
 .\scripts\build-windows-installer.ps1
 ```
 
+The application/release version is `0.5.0-beta.1`. Windows Installer metadata uses numeric `ProductVersion` `0.5.0`, as required by MSI version rules.
+
 ## Architecture
 
 ```text
@@ -153,4 +175,8 @@ The Router authenticates and routes requests; the local engine remains responsib
 
 ## Release safety
 
-`v0.5.0-beta.1` is published only by the manual Windows release workflow from `main`. The workflow verifies that the selected SHA is the current `main` SHA and already has a successful CI run before rebuilding, testing, packaging, checksum generation, version verification, and prerelease creation.
+`v0.5.0-beta.1` is published only by the manual Windows release workflow from `main`. The workflow verifies that the selected SHA is the current `main` SHA and already has a successful CI run before rebuilding, testing, validating MSI metadata/payloads, checking checksums, and creating the prerelease from that exact SHA.
+
+## License
+
+Latch is licensed under the [MIT License](LICENSE).

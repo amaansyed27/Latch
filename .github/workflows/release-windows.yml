@@ -3,6 +3,7 @@ name: Windows beta release
 on:
   push:
     tags: ['v*']
+    branches: ['release/v0.4.5-beta.1']
 
 permissions:
   contents: write
@@ -12,9 +13,12 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Verify release tag
+      - name: Verify release ref
         shell: pwsh
-        run: if ("${{ github.ref_name }}" -ne "v0.4.5-beta.1") { throw "Expected v0.4.5-beta.1" }
+        run: |
+          if ("${{ github.ref_name }}" -ne "v0.4.5-beta.1" -and "${{ github.ref_name }}" -ne "release/v0.4.5-beta.1") {
+            throw "Unexpected release ref: ${{ github.ref_name }}"
+          }
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -41,4 +45,11 @@ jobs:
       - name: Publish prerelease
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" artifacts/* --prerelease --generate-notes --title "Latch ${{ github.ref_name }}"
+        shell: pwsh
+        run: |
+          $tag = 'v0.4.5-beta.1'
+          if (gh release view $tag 2>$null) {
+            Write-Output "Release $tag already exists; nothing to publish."
+            exit 0
+          }
+          gh release create $tag artifacts/* --target 54fa707ff92aa753e51019e020f65aee8fa81a4b --prerelease --generate-notes --title "Latch $tag"

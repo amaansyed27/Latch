@@ -12,15 +12,17 @@ function titleState(value) {
     stopped: "Stopped",
     unpaired: "Not paired",
     paused: "Paused",
+    error: "Needs attention",
   };
   return labels[value] || "Checking";
 }
 
 function renderStatus(status) {
   currentStatus = status;
+  document.body.classList.toggle("unpaired", !status.paired);
   $("version").textContent = `v${status.version}`;
   $("state-label").textContent = titleState(status.state);
-  $("state-pill").className = `state-pill ${status.state}`;
+  $("state-pill").className = `status-badge ${status.state}`;
   $("setup-view").hidden = status.paired;
   $("status-view").hidden = !status.paired;
   if (!status.paired) return;
@@ -32,16 +34,15 @@ function renderStatus(status) {
   $("remote-state").textContent = status.paused ? "Paused" : "Enabled";
   $("pause-remote").textContent = status.paused ? "Resume remote access" : "Pause remote access";
 
-  const connected = status.state === "connected";
-  document.querySelector(".connection-orb").classList.toggle("connected", connected);
-  document.querySelector(".connection-orb").classList.toggle("paused", status.paused);
   $("connection-copy").textContent = status.paused
-    ? "Remote requests are blocked locally. Pairing and the outbound connection are preserved."
-    : connected
+    ? "Remote requests are blocked locally. The device remains paired."
+    : status.state === "connected"
       ? "Ready for requests allowed by your local permissions."
       : ["reconnecting", "connecting", "starting"].includes(status.state)
         ? "Latch is reconnecting automatically."
-        : "Latch is not connected right now.";
+        : status.state === "error"
+          ? "The local worker stopped repeatedly. Check Diagnostics or restart the connection."
+          : "Latch is not connected right now.";
 }
 
 function makeButton(label, className, handler) {
@@ -59,7 +60,7 @@ function renderRoots(config) {
   $("roots-empty").hidden = config.roots.length > 0;
   for (const root of config.roots) {
     const row = document.createElement("div");
-    row.className = "list-row surface";
+    row.className = "list-row";
     const copy = document.createElement("div");
     const title = document.createElement("strong");
     title.textContent = root.display_name;
@@ -98,7 +99,9 @@ function editMcp(server) {
   $("mcp-transport").value = transport.transport || "stdio";
   $("mcp-command").value = transport.command || "";
   $("mcp-args").value = (transport.arguments || []).join("\n");
-  $("mcp-env").value = Object.entries(transport.environment_references || {}).map(([target, source]) => `${target}=${source}`).join("\n");
+  $("mcp-env").value = Object.entries(transport.environment_references || {})
+    .map(([target, source]) => `${target}=${source}`)
+    .join("\n");
   $("mcp-url").value = transport.url || "";
   $("mcp-enabled").checked = server.enabled;
   $("mcp-remote").checked = server.allow_remote;
@@ -112,7 +115,7 @@ function renderMcps(config) {
   $("mcp-empty").hidden = config.mcp_servers.length > 0;
   for (const server of config.mcp_servers) {
     const row = document.createElement("div");
-    row.className = "list-row mcp-row surface";
+    row.className = "list-row";
     const copy = document.createElement("div");
     const title = document.createElement("strong");
     title.textContent = server.display_name;
@@ -176,7 +179,8 @@ function renderLocal(snapshot) {
   renderActivity(snapshot.activity);
   if (currentStatus) {
     currentStatus.paused = snapshot.config.paused;
-    currentStatus.state = snapshot.config.paused ? "paused" : currentStatus.state === "paused" ? "connected" : currentStatus.state;
+    if (snapshot.config.paused) currentStatus.state = "paused";
+    else if (currentStatus.state === "paused") currentStatus.state = "connected";
     renderStatus(currentStatus);
   }
 }
@@ -192,8 +196,12 @@ async function refresh() {
 }
 
 function switchTab(name) {
-  for (const button of document.querySelectorAll("[data-tab]")) button.classList.toggle("active", button.dataset.tab === name);
-  for (const panel of document.querySelectorAll("[data-panel]")) panel.classList.toggle("active", panel.dataset.panel === name);
+  for (const button of document.querySelectorAll("[data-tab]")) {
+    button.classList.toggle("active", button.dataset.tab === name);
+  }
+  for (const panel of document.querySelectorAll("[data-panel]")) {
+    panel.classList.toggle("active", panel.dataset.panel === name);
+  }
 }
 
 function resetMcpForm() {
@@ -218,19 +226,22 @@ function parseEnvReferences(value) {
     const line = raw.trim();
     if (!line) continue;
     const index = line.indexOf("=");
-    if (index <= 0 || index === line.length - 1) throw new Error("Environment references must use TARGET=LOCAL_ENV_NAME.");
+    if (index <= 0 || index === line.length - 1) {
+      throw new Error("Environment references must use TARGET=LOCAL_ENV_NAME.");
+    }
     result[line.slice(0, index).trim()] = line.slice(index + 1).trim();
   }
   return result;
 }
 
-$("hide").addEventListener("click", () => invoke("hide_window"));
 $("open-devices").addEventListener("click", () => invoke("open_devices"));
 $("dashboard").addEventListener("click", () => invoke("open_dashboard"));
 $("logs").addEventListener("click", () => invoke("open_logs"));
 $("quit").addEventListener("click", () => invoke("quit_latch"));
 
-for (const button of document.querySelectorAll("[data-tab]")) button.addEventListener("click", () => switchTab(button.dataset.tab));
+for (const button of document.querySelectorAll("[data-tab]")) {
+  button.addEventListener("click", () => switchTab(button.dataset.tab));
+}
 
 $("pair").addEventListener("click", async () => {
   const button = $("pair");
@@ -261,8 +272,12 @@ $("pair").addEventListener("click", async () => {
 $("restart").addEventListener("click", async () => {
   const button = $("restart");
   button.disabled = true;
-  try { renderStatus(await invoke("restart")); setTimeout(refresh, 1000); }
-  finally { button.disabled = false; }
+  try {
+    renderStatus(await invoke("restart"));
+    setTimeout(refresh, 1000);
+  } finally {
+    button.disabled = false;
+  }
 });
 
 $("pause-remote").addEventListener("click", async () => {
@@ -271,12 +286,21 @@ $("pause-remote").addEventListener("click", async () => {
   renderStatus(await invoke("status"));
 });
 
-$("add-folder").addEventListener("click", async () => renderLocal(await invoke("add_folder")));
+$("add-folder").addEventListener("click", async () => {
+  renderLocal(await invoke("add_folder"));
+});
 
 for (const input of document.querySelectorAll("[data-permission]")) {
   input.addEventListener("change", async () => {
-    try { renderLocal(await invoke("set_permission", { permission: input.dataset.permission, enabled: input.checked })); }
-    catch (error) { input.checked = !input.checked; alert(String(error)); }
+    try {
+      renderLocal(await invoke("set_permission", {
+        permission: input.dataset.permission,
+        enabled: input.checked,
+      }));
+    } catch (error) {
+      input.checked = !input.checked;
+      alert(String(error));
+    }
   });
 }
 
@@ -312,17 +336,22 @@ $("mcp-form").addEventListener("submit", async (event) => {
 });
 
 $("clear-activity").addEventListener("click", async () => {
-  if (confirm("Clear local Latch activity history?")) renderLocal(await invoke("clear_activity"));
+  if (confirm("Clear local Latch activity history?")) {
+    renderLocal(await invoke("clear_activity"));
+  }
 });
 
 $("run-diagnostics").addEventListener("click", async () => {
   $("diagnostics-output").textContent = "Running diagnostics…";
-  try { $("diagnostics-output").textContent = await invoke("run_diagnostics"); }
-  catch (error) { $("diagnostics-output").textContent = String(error); }
+  try {
+    $("diagnostics-output").textContent = await invoke("run_diagnostics");
+  } catch (error) {
+    $("diagnostics-output").textContent = String(error);
+  }
 });
 
 refresh();
 setInterval(async () => {
   try { renderStatus(await invoke("status")); }
-  catch { /* leave the last known state visible */ }
-}, 2500);
+  catch { /* keep the last known state visible */ }
+}, 5000);

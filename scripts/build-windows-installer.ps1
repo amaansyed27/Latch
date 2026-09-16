@@ -3,7 +3,7 @@ param([string]$OutputDirectory = 'artifacts')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $output = Join-Path $root $OutputDirectory
-$expectedMsiVersion = '0.5.0'
+$expectedMsiVersion = '0.5.1'
 $expectedUpgradeCode = '6B9638AD-38B8-4EA2-88EF-76D9961EBC4C'
 
 Push-Location $root

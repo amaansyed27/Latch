@@ -16,6 +16,8 @@ Latch gives ChatGPT, Codex, and compatible MCP clients explicit access to a comp
 
 Latch installs per user under `%LOCALAPPDATA%\Programs\Latch`, lives in the Windows system tray, and starts automatically after sign-in. Closing the window keeps Latch running in the tray. **Quit Latch** disconnects it.
 
+Starting Latch from the Start menu or with `latch start` opens/focuses the tray application; the desktop app owns the normal Windows lifecycle and keeps the local worker running underneath it. The worker-only commands are internal implementation details.
+
 No Rust, Cargo, Git, administrator setup, or environment variables are required for normal use. Windows SmartScreen may warn because the private-beta installer is not signed with a publicly trusted certificate.
 
 ## What V0.5 can do
@@ -44,7 +46,7 @@ The Windows desktop app is the local authority for remote access. It provides:
 
 Local MCP environment configuration stores environment-variable names, not secret values. Secret values are resolved only on the local computer when an integration starts.
 
-The tray menu also provides quick access to Latch, device management, restart, pause/resume, and quit.
+The tray menu also provides quick access to Latch, restart, pause/resume, and quit. V0.5.1 replaces the earlier dashboard-like desktop shell with a flatter Windows utility layout and prevents background process probes from opening visible console windows.
 
 ## Use with ChatGPT or Codex
 
@@ -125,7 +127,7 @@ latch doctor
 latch reset
 ```
 
-`latch reset` stops Latch and removes the local DeviceId and credential after confirmation. Cloud revocation is a separate action on the Devices page.
+On Windows, `latch start` opens/focuses Latch Desktop and the tray app ensures the worker is running. `latch stop` stops the worker and closes the tray app. `latch reset` stops Latch and removes the local DeviceId and credential after confirmation. Cloud revocation is a separate action on the Devices page.
 
 ## Build from source
 
@@ -152,7 +154,7 @@ dotnet tool install --global wix --version 4.0.6
 .\scripts\build-windows-installer.ps1
 ```
 
-The application/release version is `0.5.0-beta.1`. Windows Installer metadata uses numeric `ProductVersion` `0.5.0`, as required by MSI version rules.
+The application/release version is `0.5.1-beta.1`. Windows Installer metadata uses numeric `ProductVersion` `0.5.1`, as required by MSI version rules.
 
 ## Architecture
 
@@ -175,7 +177,7 @@ The Router authenticates and routes requests; the local engine remains responsib
 
 ## Release safety
 
-`v0.5.0-beta.1` is published only by the manual Windows release workflow from `main`. The workflow verifies that the selected SHA is the current `main` SHA and already has a successful CI run before rebuilding, testing, validating MSI metadata/payloads, checking checksums, and creating the prerelease from that exact SHA.
+`v0.5.1-beta.1` is published only by the manual Windows release workflow from `main`. The workflow verifies that the selected SHA is the current `main` SHA and already has a successful CI run before rebuilding, testing, validating MSI metadata/payloads, checking checksums, and creating the prerelease from that exact SHA.
 
 ## License
 

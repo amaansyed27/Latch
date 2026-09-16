@@ -119,7 +119,8 @@ mod windows_app {
                 let connection = MenuItemBuilder::with_id("connection", "Connection status")
                     .enabled(false)
                     .build(app)?;
-                let pause = MenuItemBuilder::with_id("pause", "Pause remote access").build(app)?;
+                let pause =
+                    MenuItemBuilder::with_id("pause", "Pause / resume remote access").build(app)?;
                 let restart =
                     MenuItemBuilder::with_id("restart", "Restart connection").build(app)?;
                 let quit = MenuItemBuilder::with_id("quit", "Quit Latch").build(app)?;
@@ -140,15 +141,17 @@ mod windows_app {
                         "open" => show_window(app),
                         "pause" => {
                             if let Ok(store) = local_store() {
-                                let _ = store.set_paused(true);
+                                if let Ok(config) = store.load() {
+                                    let _ = store.set_paused(!config.paused);
+                                }
                             }
                             show_window(app);
                         }
                         "restart" => {
-                            let _ = run_cli(&["restart"]);
+                            let _ = run_cli(&["worker-restart"]);
                         }
                         "quit" => {
-                            let _ = run_cli(&["stop"]);
+                            let _ = run_cli(&["worker-stop"]);
                             app.exit(0);
                         }
                         _ => {}
@@ -166,7 +169,7 @@ mod windows_app {
                     .build(app)?;
 
                 if is_paired() {
-                    let _ = run_cli(&["start", "--startup"]);
+                    let _ = run_cli(&["worker-start"]);
                 }
 
                 if !startup || !is_paired() {
@@ -253,8 +256,11 @@ mod windows_app {
     }
 
     fn process_exists(pid: u32) -> bool {
+        use std::os::windows::process::CommandExt;
+
         Command::new("tasklist")
             .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+            .creation_flags(CREATE_NO_WINDOW)
             .output()
             .is_ok_and(|output| {
                 let text = String::from_utf8_lossy(&output.stdout).to_ascii_lowercase();
@@ -350,15 +356,15 @@ mod windows_app {
             .await
             .map_err(|error| error.to_string())?;
 
-        let _ = run_cli(&["stop"]);
-        run_cli(&["start", "--startup"])?;
+        let _ = run_cli(&["worker-stop"]);
+        run_cli(&["worker-start"])?;
         tokio::time::sleep(Duration::from_millis(900)).await;
         Ok(status_snapshot())
     }
 
     #[tauri::command]
     async fn restart() -> Result<DesktopStatus, String> {
-        run_cli(&["restart"])?;
+        run_cli(&["worker-restart"])?;
         tokio::time::sleep(Duration::from_millis(700)).await;
         Ok(status_snapshot())
     }
@@ -508,10 +514,13 @@ mod windows_app {
 
     #[tauri::command]
     fn open_logs() -> Result<(), String> {
+        use std::os::windows::process::CommandExt;
+
         let logs = local_app_dir().join("logs");
         fs::create_dir_all(&logs).map_err(|error| error.to_string())?;
         Command::new("explorer.exe")
             .arg(logs)
+            .creation_flags(CREATE_NO_WINDOW)
             .spawn()
             .map(|_| ())
             .map_err(|error| error.to_string())
@@ -528,13 +537,16 @@ mod windows_app {
     #[allow(clippy::needless_pass_by_value)]
     #[tauri::command]
     fn quit_latch(app: AppHandle) {
-        let _ = run_cli(&["stop"]);
+        let _ = run_cli(&["worker-stop"]);
         app.exit(0);
     }
 
     fn open_url(url: &str) -> Result<(), String> {
+        use std::os::windows::process::CommandExt;
+
         Command::new("explorer.exe")
             .arg(url)
+            .creation_flags(CREATE_NO_WINDOW)
             .spawn()
             .map(|_| ())
             .map_err(|error| error.to_string())

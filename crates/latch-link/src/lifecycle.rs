@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
     thread,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use latch_link::{
@@ -135,7 +135,10 @@ pub fn supervise() -> io::Result<()> {
         let _ = fs::remove_file(supervisor_pid_path(&dir));
         return Ok(());
     }
+
+    let mut rapid_failures = 0_u8;
     while !dir.join("stopped").exists() {
+        let started = Instant::now();
         let mut command = Command::new(std::env::current_exe()?);
         command
             .args(["run", "--background"])
@@ -144,7 +147,21 @@ pub fn supervise() -> io::Result<()> {
             .stderr(Stdio::null());
         let mut child = spawn_hidden(&mut command)?;
         let _ = child.wait();
-        if !dir.join("stopped").exists() {
+        if dir.join("stopped").exists() {
+            break;
+        }
+
+        if started.elapsed() < Duration::from_secs(10) {
+            rapid_failures = rapid_failures.saturating_add(1);
+        } else {
+            rapid_failures = 0;
+        }
+
+        if rapid_failures >= 5 {
+            let _ = write_simple_status("error");
+            thread::sleep(Duration::from_secs(30));
+            rapid_failures = 0;
+        } else {
             thread::sleep(Duration::from_secs(3));
         }
     }
@@ -300,8 +317,11 @@ fn spawn_hidden(command: &mut Command) -> io::Result<std::process::Child> {
 
 #[cfg(windows)]
 fn process_exists(pid: u32) -> bool {
+    use std::os::windows::process::CommandExt;
+
     Command::new("tasklist")
         .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+        .creation_flags(0x0800_0000)
         .output()
         .is_ok_and(|output| {
             let text = String::from_utf8_lossy(&output.stdout).to_ascii_lowercase();
@@ -316,8 +336,11 @@ fn process_exists(pid: u32) -> bool {
 
 #[cfg(windows)]
 fn terminate(pid: u32) {
+    use std::os::windows::process::CommandExt;
+
     let _ = Command::new("taskkill")
         .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .creation_flags(0x0800_0000)
         .output();
 }
 #[cfg(not(windows))]

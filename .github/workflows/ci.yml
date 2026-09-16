@@ -34,13 +34,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace
       - run: cargo build --workspace
-      - name: Verify WiX V0.5 metadata
+      - name: Verify WiX V0.5.1 metadata
         shell: pwsh
         run: |
           [xml]$wix = Get-Content 'installer\Latch.wxs' -Raw
           $package = $wix.SelectSingleNode("//*[local-name()='Package']")
           if (-not $package) { throw 'WiX Package element missing' }
-          if ($package.Version -ne '0.5.0') { throw "Unexpected WiX Version: $($package.Version)" }
+          if ($package.Version -ne '0.5.1') { throw "Unexpected WiX Version: $($package.Version)" }
           if ($package.UpgradeCode -ne '6B9638AD-38B8-4EA2-88EF-76D9961EBC4C') { throw "Unexpected UpgradeCode: $($package.UpgradeCode)" }
       - name: Install WiX
         run: dotnet tool install --global wix --version 4.0.6 --add-source https://api.nuget.org/v3/index.json
@@ -57,7 +57,7 @@ jobs:
           $record = $view.Fetch()
           if (-not $record) { throw 'MSI ProductVersion missing' }
           $productVersion = $record.StringData(1)
-          if ($productVersion -ne '0.5.0') { throw "Unexpected MSI ProductVersion: $productVersion" }
+          if ($productVersion -ne '0.5.1') { throw "Unexpected MSI ProductVersion: $productVersion" }
           $view.Close()
 
           $extract = Join-Path $env:RUNNER_TEMP 'latch-msi'
@@ -68,7 +68,7 @@ jobs:
           if (-not $cli) { throw 'latch.exe missing' }
           if (-not $desktop) { throw 'LatchDesktop.exe missing' }
           $version = & $cli.FullName --version
-          if ($version -ne 'latch 0.5.0-beta.1') { throw "Unexpected binary version: $version" }
+          if ($version -ne 'latch 0.5.1-beta.1') { throw "Unexpected binary version: $version" }
       - name: Smoke-test clean MSI install and uninstall
         shell: pwsh
         run: |
@@ -81,7 +81,7 @@ jobs:
           if (-not (Test-Path $cli)) { throw 'Installed latch.exe missing' }
           if (-not (Test-Path $desktop)) { throw 'Installed LatchDesktop.exe missing' }
           $version = & $cli --version
-          if ($version -ne 'latch 0.5.0-beta.1') { throw "Unexpected installed version: $version" }
+          if ($version -ne 'latch 0.5.1-beta.1') { throw "Unexpected installed version: $version" }
           $uninstall = Start-Process msiexec.exe -ArgumentList '/x', "`"$msi`"", '/qn', '/norestart' -Wait -PassThru
           if ($uninstall.ExitCode) { throw "MSI uninstall failed with $($uninstall.ExitCode)" }
           if (Test-Path $cli) { throw 'latch.exe remained after uninstall' }
@@ -89,7 +89,7 @@ jobs:
       - name: Upload Windows beta artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Latch-Windows-v0.5.0-beta.1
+          name: Latch-Windows-v0.5.1-beta.1
           path: |
             artifacts/LatchSetup-x64.msi
             artifacts/latch-windows-x64.zip

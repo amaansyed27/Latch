@@ -32,7 +32,7 @@ export function DownloadPage() {
       <section className="surface download-surface">
         <div className="download-art">
           <Laptop size={88} strokeWidth={1} />
-          <span className="version">v0.5.0-beta.1</span>
+          <span className="version">v0.5.1-beta.1</span>
         </div>
         <div>
           <span className="eyebrow">Windows private beta</span>

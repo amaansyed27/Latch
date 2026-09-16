@@ -1,108 +1,195 @@
 <!doctype html>
-<html lang="en" data-theme="system">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
     <title>Latch</title>
     <link rel="stylesheet" href="style.css" />
-    <link rel="stylesheet" href="v05.css" />
     <script src="app.js" defer></script>
   </head>
   <body>
-    <div class="app-shell v05-shell">
-      <header class="titlebar" data-tauri-drag-region>
-        <div class="brand" data-tauri-drag-region>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-row">
           <img src="logo.svg" alt="" />
-          <div data-tauri-drag-region><strong>Latch</strong><small id="version">Private beta</small></div>
+          <div>
+            <strong>Latch</strong>
+            <small id="version">Private beta</small>
+          </div>
         </div>
-        <div class="title-actions">
-          <span class="state-pill" id="state-pill"><i></i><span id="state-label">Checking…</span></span>
-          <button class="icon-button" id="hide" aria-label="Hide Latch" title="Hide to tray">×</button>
-        </div>
-      </header>
 
-      <main>
-        <section id="setup-view" hidden>
-          <div class="eyebrow">First-time setup</div>
-          <h1>Connect this computer.</h1>
-          <p class="lede">Pair once. Then approve the folders and capabilities you want ChatGPT to use.</p>
-          <div class="surface setup-card">
-            <div class="setup-step"><span class="number">01</span><div><h2>Get a pairing code</h2><p>Sign in to Latch, open Devices, and choose Add computer.</p><button class="button secondary" id="open-devices">Open Latch account ↗</button></div></div>
-            <div class="divider"></div>
-            <div class="setup-step"><span class="number">02</span><div class="pair-form"><h2>Pair this computer</h2><p>Paste the one-time code shown in your browser.</p><label for="pair-code">Pairing code</label><div class="inset"><input id="pair-code" autocomplete="off" spellcheck="false" placeholder="Paste pairing code" /></div><button class="button primary" id="pair">Pair this computer</button><p class="form-message" id="pair-message" role="status"></p></div></div>
+        <nav class="side-nav" id="side-nav" aria-label="Latch sections">
+          <button class="active" data-tab="status">Overview</button>
+          <button data-tab="folders">Folders</button>
+          <button data-tab="mcps">Local MCPs</button>
+          <button data-tab="permissions">Permissions</button>
+          <button data-tab="activity">Activity</button>
+          <button data-tab="diagnostics">Diagnostics</button>
+        </nav>
+
+        <div class="sidebar-bottom">
+          <button class="nav-action" id="dashboard">Account &amp; devices</button>
+          <button class="nav-action danger" id="quit">Quit Latch</button>
+        </div>
+      </aside>
+
+      <main class="content">
+        <section id="setup-view" class="setup-view" hidden>
+          <div class="setup-copy">
+            <span class="eyebrow">First-time setup</span>
+            <h1>Connect this computer</h1>
+            <p>Pair once, then choose exactly what ChatGPT may use on this PC.</p>
+          </div>
+
+          <div class="setup-grid">
+            <section class="plain-section">
+              <div class="step-number">1</div>
+              <div>
+                <h2>Get a pairing code</h2>
+                <p>Sign in to Latch, open Devices, and choose Add computer.</p>
+                <button class="button secondary" id="open-devices">Open Latch account</button>
+              </div>
+            </section>
+
+            <section class="plain-section">
+              <div class="step-number">2</div>
+              <div class="pair-form">
+                <h2>Pair this computer</h2>
+                <p>Paste the one-time code shown in your browser.</p>
+                <label for="pair-code">Pairing code</label>
+                <input id="pair-code" autocomplete="off" spellcheck="false" placeholder="Paste pairing code" />
+                <button class="button primary" id="pair">Pair this computer</button>
+                <p class="form-message" id="pair-message" role="status"></p>
+              </div>
+            </section>
           </div>
         </section>
 
         <section id="status-view" hidden>
-          <div class="v05-topline">
-            <div><div class="eyebrow">This computer</div><h1 id="device-name">This computer</h1></div>
-            <button class="button pause-button" id="pause-remote">Pause remote access</button>
-          </div>
-
-          <nav class="section-tabs" aria-label="Latch sections">
-            <button class="active" data-tab="status">Status</button>
-            <button data-tab="folders">Folders</button>
-            <button data-tab="mcps">Local MCPs</button>
-            <button data-tab="permissions">Permissions</button>
-            <button data-tab="activity">Activity</button>
-            <button data-tab="diagnostics">Diagnostics</button>
-          </nav>
+          <header class="page-header">
+            <div>
+              <span class="eyebrow">This computer</span>
+              <h1 id="device-name">This computer</h1>
+            </div>
+            <div class="header-actions">
+              <span class="status-badge" id="state-pill"><i></i><span id="state-label">Checking…</span></span>
+              <button class="button" id="pause-remote">Pause remote access</button>
+            </div>
+          </header>
 
           <section class="tab-panel active" data-panel="status">
-            <div class="connection-hero surface"><div class="connection-orb"><span></span></div><div><small>Latch connection</small><h2 id="detail-status">Checking…</h2><p id="connection-copy">Checking connection…</p></div></div>
-            <div class="details surface"><div><span>Device ID</span><code id="device-id">—</code></div><div><span>Router</span><code id="router">latch-router.vercel.app</code></div><div><span>Remote access</span><strong id="remote-state">Enabled</strong></div></div>
-            <div class="action-grid"><button class="soft-action" id="dashboard"><span>Dashboard</span><small>Account &amp; devices ↗</small></button><button class="soft-action" id="restart"><span>Restart</span><small>Reconnect Latch</small></button><button class="soft-action" id="logs"><span>Logs</span><small>Open local logs</small></button></div>
+            <div class="section-title">
+              <h2>Connection</h2>
+              <p id="connection-copy">Checking connection…</p>
+            </div>
+
+            <div class="status-table">
+              <div><span>Status</span><strong id="detail-status">Checking…</strong></div>
+              <div><span>Device ID</span><code id="device-id">—</code></div>
+              <div><span>Router</span><code id="router">latch-router.vercel.app</code></div>
+              <div><span>Remote access</span><strong id="remote-state">Enabled</strong></div>
+            </div>
+
+            <div class="button-row">
+              <button class="button primary" id="restart">Restart connection</button>
+              <button class="button" id="logs">Open logs</button>
+            </div>
+
+            <div class="notice" id="status-notice">
+              Latch stays in the system tray when this window is closed.
+            </div>
           </section>
 
           <section class="tab-panel" data-panel="folders">
-            <div class="panel-heading"><div><h2>Approved folders</h2><p>ChatGPT sees the folder name and an opaque ID, not its absolute path.</p></div><button class="button primary" id="add-folder">Add folder</button></div>
-            <div class="stack-list" id="roots-list"></div>
+            <div class="page-section-header">
+              <div>
+                <h2>Approved folders</h2>
+                <p>Only folders you approve here are available to Latch file tools.</p>
+              </div>
+              <button class="button primary" id="add-folder">Add folder</button>
+            </div>
+            <div class="list" id="roots-list"></div>
             <p class="empty-state" id="roots-empty">No folders approved yet.</p>
           </section>
 
           <section class="tab-panel" data-panel="mcps">
-            <div class="panel-heading"><div><h2>Local MCPs</h2><p>Configure integrations locally. Secrets stay in local environment variables.</p></div><button class="button primary" id="new-mcp">Add MCP</button></div>
-            <div class="stack-list" id="mcp-list"></div><p class="empty-state" id="mcp-empty">No local MCP integrations configured.</p>
-            <form class="surface mcp-form" id="mcp-form" hidden>
+            <div class="page-section-header">
+              <div>
+                <h2>Local MCPs</h2>
+                <p>Connect local tools such as Blender or Playwright. Configuration remains on this PC.</p>
+              </div>
+              <button class="button primary" id="new-mcp">Add MCP</button>
+            </div>
+            <div class="list" id="mcp-list"></div>
+            <p class="empty-state" id="mcp-empty">No local MCP integrations configured.</p>
+
+            <form class="mcp-form" id="mcp-form" hidden>
               <input type="hidden" id="mcp-id" />
-              <div class="form-head"><h3 id="mcp-form-title">Add MCP</h3><button type="button" class="text-button" id="cancel-mcp">Cancel</button></div>
+              <div class="form-head">
+                <h3 id="mcp-form-title">Add MCP</h3>
+                <button type="button" class="text-button" id="cancel-mcp">Cancel</button>
+              </div>
               <label>Name<input id="mcp-name" maxlength="128" required placeholder="Blender" /></label>
               <label>Transport<select id="mcp-transport"><option value="stdio">Command / stdio</option><option value="http">HTTP</option></select></label>
-              <div id="mcp-stdio-fields"><label>Command<input id="mcp-command" maxlength="4096" placeholder="npx" /></label><label>Arguments <small>one per line</small><textarea id="mcp-args" rows="3" placeholder="-y&#10;@modelcontextprotocol/server-example"></textarea></label><label>Environment references <small>TARGET=LOCAL_ENV_NAME</small><textarea id="mcp-env" rows="3" placeholder="TOKEN=BLENDER_MCP_TOKEN"></textarea></label></div>
-              <div id="mcp-http-fields" hidden><label>HTTP URL<input id="mcp-url" maxlength="4096" placeholder="http://127.0.0.1:3000/mcp" /></label></div>
-              <div class="inline-checks"><label><input type="checkbox" id="mcp-enabled" checked /> Enabled</label><label><input type="checkbox" id="mcp-remote" /> Allow through ChatGPT</label></div>
-              <p class="form-message" id="mcp-message" role="status"></p><button class="button primary" type="submit">Save integration</button>
+              <div id="mcp-stdio-fields">
+                <label>Command<input id="mcp-command" maxlength="4096" placeholder="npx" /></label>
+                <label>Arguments <small>one per line</small><textarea id="mcp-args" rows="3" placeholder="-y&#10;package-name"></textarea></label>
+                <label>Environment references <small>TARGET=LOCAL_ENV_NAME</small><textarea id="mcp-env" rows="3" placeholder="TOKEN=LOCAL_TOKEN_NAME"></textarea></label>
+              </div>
+              <div id="mcp-http-fields" hidden>
+                <label>HTTP URL<input id="mcp-url" maxlength="4096" placeholder="http://127.0.0.1:3000/mcp" /></label>
+              </div>
+              <div class="inline-checks">
+                <label><input type="checkbox" id="mcp-enabled" checked /> Enabled</label>
+                <label><input type="checkbox" id="mcp-remote" /> Allow through ChatGPT</label>
+              </div>
+              <p class="form-message" id="mcp-message" role="status"></p>
+              <button class="button primary" type="submit">Save integration</button>
             </form>
           </section>
 
           <section class="tab-panel" data-panel="permissions">
-            <div class="panel-heading"><div><h2>Local permissions</h2><p>These switches always win over OAuth. Turning one off denies it immediately.</p></div></div>
-            <div class="permission-cards">
+            <div class="page-section-header">
+              <div>
+                <h2>Permissions</h2>
+                <p>Local switches override OAuth. Turn a capability off here to deny it immediately.</p>
+              </div>
+            </div>
+            <div class="permission-list">
               <label class="permission-row"><span><strong>Files</strong><small>Use files inside approved folders</small></span><input type="checkbox" data-permission="files" /></label>
               <label class="permission-row"><span><strong>Commands</strong><small>Run and manage local processes</small></span><input type="checkbox" data-permission="commands" /></label>
-              <label class="permission-row"><span><strong>Screen access</strong><small>Capture screen only on explicit request</small></span><input type="checkbox" data-permission="screen" /></label>
-              <label class="permission-row"><span><strong>Mouse &amp; keyboard control</strong><small>Focus windows and send local input</small></span><input type="checkbox" data-permission="computer_control" /></label>
+              <label class="permission-row"><span><strong>Screen access</strong><small>Capture the screen only on explicit request</small></span><input type="checkbox" data-permission="screen" /></label>
+              <label class="permission-row"><span><strong>Mouse &amp; keyboard</strong><small>Focus windows and send local input</small></span><input type="checkbox" data-permission="computer_control" /></label>
               <label class="permission-row"><span><strong>MCP discovery</strong><small>List allowed local MCP integrations and tools</small></span><input type="checkbox" data-permission="mcp_discovery" /></label>
               <label class="permission-row"><span><strong>MCP execution</strong><small>Call tools on allowed local MCP integrations</small></span><input type="checkbox" data-permission="mcp_execution" /></label>
             </div>
           </section>
 
           <section class="tab-panel" data-panel="activity">
-            <div class="panel-heading"><div><h2>Recent activity</h2><p>Bounded local metadata only. No file contents, screenshots, command output, or secrets.</p></div><button class="button" id="clear-activity">Clear history</button></div>
-            <div class="activity-list" id="activity-list"></div><p class="empty-state" id="activity-empty">No remote activity recorded yet.</p>
+            <div class="page-section-header">
+              <div>
+                <h2>Recent activity</h2>
+                <p>Local metadata only. File contents, screenshots, command output, and secrets are not stored here.</p>
+              </div>
+              <button class="button" id="clear-activity">Clear history</button>
+            </div>
+            <div class="activity-list" id="activity-list"></div>
+            <p class="empty-state" id="activity-empty">No remote activity recorded yet.</p>
           </section>
 
           <section class="tab-panel" data-panel="diagnostics">
-            <div class="panel-heading"><div><h2>Diagnostics</h2><p>Check pairing, credentials, router health, folders, integrations, and pause state.</p></div><button class="button primary" id="run-diagnostics">Run diagnostics</button></div>
-            <pre class="diagnostics-output surface" id="diagnostics-output">Run diagnostics when something does not look right.</pre>
+            <div class="page-section-header">
+              <div>
+                <h2>Diagnostics</h2>
+                <p>Check pairing, credentials, Router health, folders, integrations, and pause state.</p>
+              </div>
+              <button class="button primary" id="run-diagnostics">Run diagnostics</button>
+            </div>
+            <pre class="diagnostics-output" id="diagnostics-output">Run diagnostics when something does not look right.</pre>
           </section>
-
-          <p class="quiet-note">Closing this window keeps Latch running in the tray.</p>
         </section>
       </main>
-
-      <footer><span>Starts automatically with Windows</span><button class="text-button danger" id="quit">Quit Latch</button></footer>
     </div>
   </body>
 </html>

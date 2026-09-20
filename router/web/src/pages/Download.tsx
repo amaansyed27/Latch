@@ -1,6 +1,6 @@
 import { ArrowUpRight, Download, Laptop, MonitorCheck } from "lucide-react";
 import { PageHeading } from "../layouts/layouts";
-import { DOWNLOAD, RELEASE } from "../lib/api";
+import { DOWNLOAD, RELEASE, WINDOWS_VERSION } from "../lib/api";
 
 export default function DownloadPage() {
   return (
@@ -13,10 +13,10 @@ export default function DownloadPage() {
       <section className="surface download-surface">
         <div className="download-art">
           <Laptop size={88} strokeWidth={1} />
-          <span className="version">v0.5.0-beta.1</span>
+          <span className="version">{WINDOWS_VERSION}</span>
         </div>
         <div>
-          <span className="eyebrow">Windows private beta</span>
+          <span className="eyebrow">Windows private beta · {WINDOWS_VERSION}</span>
           <h2>A real desktop app, not a background command.</h2>
           <p className="muted">
             Windows 10/11 · x64
@@ -25,7 +25,7 @@ export default function DownloadPage() {
           </p>
           <a href={DOWNLOAD} className="button primary">
             <Download size={18} />
-            Download Latch
+            Download Latch {WINDOWS_VERSION}
           </a>
           <a
             className="text-link release-link"

@@ -68,6 +68,7 @@ function send(response: ServerResponse, status: number, data: unknown): void {
     .replace(/&/g, "\\u0026");
   response.statusCode = status;
   response.setHeader("content-type", "text/html; charset=utf-8");
+  response.setHeader("cache-control", "no-store");
   response.end(
     template().replace(
       "<!--latch-bootstrap-->",
@@ -79,7 +80,13 @@ export function serveAsset(response: ServerResponse, path: string): boolean {
   if (!/^\/(?:assets\/[a-zA-Z0-9._-]+|favicon\.svg|theme\.js)$/.test(path))
     return false;
   const file = resolve(publicRoot, `.${path}`);
-  if (!existsSync(file)) return false;
+  if (!existsSync(file)) {
+    response.statusCode = 404;
+    response.setHeader("content-type", "text/plain; charset=utf-8");
+    response.setHeader("cache-control", "no-store");
+    response.end("Not found");
+    return true;
+  }
   const type: Record<string, string> = {
     ".css": "text/css",
     ".js": "text/javascript",

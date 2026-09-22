@@ -1,8 +1,13 @@
+mod vnext;
+
 use latch_core::{McpServerId, ProcessId, RootId, WorkspaceId};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-pub const PROTOCOL_VERSION: u16 = 2;
+pub use vnext::*;
+
+pub const PROTOCOL_VERSION: u16 = 3;
+pub const LEGACY_PROTOCOL_VERSION: u16 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RequestEnvelope {
@@ -15,6 +20,8 @@ pub struct RequestEnvelope {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "method", content = "params")]
 pub enum Request {
+    #[serde(rename = "agent")]
+    Agent(AgentRequest),
     #[serde(rename = "roots.list")]
     RootsList(EmptyRequest),
     #[serde(rename = "workspace.open")]
@@ -311,6 +318,7 @@ pub enum ResponseOutcome {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum ResponsePayload {
+    Agent(Value),
     Roots(RootsResponse),
     Workspace(WorkspaceResponse),
     Directory(DirectoryResponse),
@@ -494,6 +502,8 @@ pub struct WindowsResponse {
 #[serde(rename_all = "snake_case")]
 pub enum McpServerStatusResponse {
     Stopped,
+    Connected,
+    Degraded,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -537,6 +547,7 @@ pub enum ErrorCode {
     InvalidRequest,
     UnsupportedVersion,
     PermissionDenied,
+    ApprovalRequired,
     RootNotFound,
     WorkspaceExpired,
     PathEscape,
@@ -548,12 +559,21 @@ pub enum ErrorCode {
     CommandNotFound,
     ProcessNotFound,
     ProcessFailed,
+    SessionNotFound,
+    SessionClosed,
+    TerminalNotFound,
+    UiRefStale,
+    TargetElevated,
+    SecureDesktop,
+    BrowserUnavailable,
+    VerificationFailed,
     ComputerReadDisabled,
     ComputerControlDisabled,
     ComputerUnavailable,
     McpServerNotFound,
     McpServerDisabled,
     McpToolNotFound,
+    McpToolRefNotFound,
     McpTimeout,
     McpUnavailable,
     RemotePaused,
@@ -570,13 +590,21 @@ mod tests {
     #[test]
     fn approved_workspace_request_is_versioned_and_has_no_os_path() {
         let request: RequestEnvelope = serde_json::from_str(
-            r#"{"id":"1","version":2,"method":"workspace.open","params":{"root_id":"00000000-0000-0000-0000-000000000001","relative_path":"project"}}"#,
+            r#"{"id":"1","version":3,"method":"workspace.open","params":{"root_id":"00000000-0000-0000-0000-000000000001","relative_path":"project"}}"#,
         )
         .unwrap();
-
         assert_eq!(request.version, PROTOCOL_VERSION);
         assert!(matches!(request.request, Request::WorkspaceOpen(_)));
         assert!(!serde_json::to_string(&request).unwrap().contains("C:\\\\"));
+    }
+
+    #[test]
+    fn agent_requests_are_domain_tagged() {
+        let request = Request::Agent(AgentRequest::Session(SessionRequest::Create));
+        let value = serde_json::to_value(request).unwrap();
+        assert_eq!(value["method"], json!("agent"));
+        assert_eq!(value["params"]["domain"], json!("session"));
+        assert_eq!(value["params"]["request"]["op"], json!("create"));
     }
 
     #[test]
@@ -593,26 +621,22 @@ mod tests {
                 stderr_truncated: true,
             }),
         );
-
         let value = serde_json::to_value(&response).unwrap();
-        assert_eq!(value["version"], json!(2));
+        assert_eq!(value["version"], json!(3));
         assert_eq!(value["status"], json!("ok"));
         assert_eq!(value["result"]["type"], json!("exec"));
-        assert_eq!(
-            serde_json::from_value::<ResponseEnvelope>(value).unwrap(),
-            response
-        );
+        assert_eq!(serde_json::from_value::<ResponseEnvelope>(value).unwrap(), response);
     }
 
     #[test]
     fn stable_errors_use_snake_case() {
         assert_eq!(
-            serde_json::to_string(&ErrorCode::ComputerControlDisabled).unwrap(),
-            "\"computer_control_disabled\""
+            serde_json::to_string(&ErrorCode::TargetElevated).unwrap(),
+            "\"target_elevated\""
         );
         assert_eq!(
-            serde_json::to_string(&ErrorCode::RemotePaused).unwrap(),
-            "\"remote_paused\""
+            serde_json::to_string(&ErrorCode::ApprovalRequired).unwrap(),
+            "\"approval_required\""
         );
     }
 }

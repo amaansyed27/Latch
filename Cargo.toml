@@ -26,6 +26,7 @@ rust-version = "1.85"
 [workspace.dependencies]
 cap-std = "4.0.3"
 command-group = "5.0.1"
+cpvc = "=0.6.0"
 dirs = "6.0"
 futures-util = "0.3"
 keyring = { version = "3.6.3", default-features = false, features = ["windows-native"] }

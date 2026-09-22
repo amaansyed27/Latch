@@ -5,6 +5,9 @@ members = [
     "crates/latch-fs",
     "crates/latch-exec",
     "crates/latch-computer",
+    "crates/latch-terminal",
+    "crates/latch-windows",
+    "crates/latch-browser",
     "crates/latch-mcp-client",
     "crates/latch-protocol",
     "crates/latch-engine",
@@ -15,7 +18,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.5.1-beta.1"
+version = "0.6.0-beta.1"
 edition = "2021"
 license = "MIT"
 rust-version = "1.85"
@@ -26,6 +29,7 @@ command-group = "5.0.1"
 dirs = "6.0"
 futures-util = "0.3"
 keyring = { version = "3.6.3", default-features = false, features = ["windows-native"] }
+portable-pty = "=0.9.0"
 reqwest = { version = "0.12", default-features = false, features = ["json", "native-tls"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -35,6 +39,7 @@ tokio = { version = "1.47", features = ["macros", "process", "rt-multi-thread", 
 tokio-tungstenite = { version = "0.28", features = ["rustls-tls-native-roots"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
+uiautomation = "=0.25.1"
 url = "2.5"
 uuid = { version = "1.18", features = ["serde", "v4"] }
 

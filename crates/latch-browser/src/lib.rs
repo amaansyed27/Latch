@@ -10,7 +10,6 @@ use latch_core::{BrowserContextId, TabId};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use thiserror::Error;
-use tracing::warn;
 
 const MAX_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_STRING_CHARS: usize = 64 * 1024;
@@ -49,7 +48,7 @@ pub struct BrowserTarget {
     pub exact: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct BrowserElement {
     pub element_ref: String,
     pub role: Option<String>,
@@ -88,7 +87,7 @@ pub struct BrowserVerification {
     pub selector_visible: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BrowserActionResult {
     pub url: String,
     pub title: String,
@@ -103,7 +102,7 @@ pub struct BrowserSnapshot {
     pub truncated: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct BrowserScreenshot {
     pub mime_type: String,
     pub data_base64: String,
@@ -284,14 +283,7 @@ impl BrowserManager {
         after_sequence: u64,
         max_entries: usize,
     ) -> Result<Vec<BrowserLogEntry>, BrowserError> {
-        from_value(self.call(
-            "console",
-            json!({
-                "tab_id": tab_id,
-                "after_sequence": after_sequence,
-                "max_entries": max_entries.clamp(1, 100),
-            }),
-        )?)
+        self.log_entries("console", tab_id, after_sequence, max_entries)
     }
 
     pub fn network(
@@ -300,14 +292,16 @@ impl BrowserManager {
         after_sequence: u64,
         max_entries: usize,
     ) -> Result<Vec<BrowserLogEntry>, BrowserError> {
-        from_value(self.call(
-            "network",
-            json!({
-                "tab_id": tab_id,
-                "after_sequence": after_sequence,
-                "max_entries": max_entries.clamp(1, 100),
-            }),
-        )?)
+        self.log_entries("network", tab_id, after_sequence, max_entries)
+    }
+
+    pub fn downloads(
+        &self,
+        tab_id: TabId,
+        after_sequence: u64,
+        max_entries: usize,
+    ) -> Result<Vec<BrowserLogEntry>, BrowserError> {
+        self.log_entries("downloads", tab_id, after_sequence, max_entries)
     }
 
     pub fn screenshot(&self, tab_id: TabId) -> Result<BrowserScreenshot, BrowserError> {
@@ -325,6 +319,23 @@ impl BrowserManager {
             let _ = process.child.kill();
             let _ = process.child.wait();
         }
+    }
+
+    fn log_entries(
+        &self,
+        operation: &str,
+        tab_id: TabId,
+        after_sequence: u64,
+        max_entries: usize,
+    ) -> Result<Vec<BrowserLogEntry>, BrowserError> {
+        from_value(self.call(
+            operation,
+            json!({
+                "tab_id": tab_id,
+                "after_sequence": after_sequence,
+                "max_entries": max_entries.clamp(1, 100),
+            }),
+        )?)
     }
 
     fn call(&self, operation: &str, params: Value) -> Result<Value, BrowserError> {

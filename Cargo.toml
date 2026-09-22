@@ -42,6 +42,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"]
 uiautomation = "=0.25.1"
 url = "2.5"
 uuid = { version = "1.18", features = ["serde", "v4"] }
+win32job = "=2.0.3"
 
 [workspace.lints.rust]
 unsafe_code = "deny"

@@ -1,0 +1,29 @@
+name: V0.6 MCP provider repair
+
+on:
+  push:
+    branches:
+      - feat/v0.6-windows-agent-runtime
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: python scripts/repair-mcp-provider-display-name.py
+      - run: cargo fmt --all
+      - name: Commit repair and remove one-shot files
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/v06-mcp-provider-repair.yml scripts/repair-mcp-provider-display-name.py
+          git add crates/latch-mcp-client/src/lib.rs
+          git commit -m "fix: restore MCP provider display names"
+          git push origin HEAD:feat/v0.6-windows-agent-runtime

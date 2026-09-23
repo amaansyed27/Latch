@@ -31,9 +31,9 @@ try {
     New-Item -ItemType Directory -Path $output -Force | Out-Null
     Remove-Item "$output\LatchSetup-x64.msi", "$output\LatchSetup-x64.wixpdb", "$output\latch-windows-x64.zip", "$output\SHA256SUMS.txt", $browserStage -Recurse -Force -ErrorAction SilentlyContinue
 
-    # Build the exact browser runtime that will ship. Playwright is pinned in
-    # runtime/browser/package.json; --no-install prevents npx from resolving a
-    # different package from the network.
+    # Build exactly the pinned provider that will ship. The package contains
+    # playwright@1.63.0 and Chromium is installed into playwright-core so the
+    # runtime never resolves `@latest` on the user's machine.
     Push-Location $browserSource
     try {
         $oldBrowsersPath = $env:PLAYWRIGHT_BROWSERS_PATH
@@ -53,7 +53,6 @@ try {
     Copy-Item "$browserSource\package.json" $browserStage
     Copy-Item "$browserSource\node_modules" "$browserStage\node_modules" -Recurse
     $nodePath = (Get-Command node.exe -ErrorAction Stop).Source
-    Copy-Item $nodePath "$browserStage\node.exe"
     if (-not (Test-Path "$browserStage\node_modules\playwright\package.json")) { throw 'Playwright runtime missing from browser stage.' }
     if (-not (Get-ChildItem "$browserStage\node_modules\playwright-core\.local-browsers" -Recurse -Filter chrome.exe -ErrorAction SilentlyContinue | Select-Object -First 1)) {
         throw 'Pinned Chromium payload missing from browser stage.'
@@ -65,6 +64,7 @@ try {
         -d "SourceDir=$root\target\release" `
         -d "IconDir=$root\crates\latch-desktop\icons" `
         -d "BrowserRuntimeDir=$browserStage" `
+        -d "NodeExePath=$nodePath" `
         -o "$output\LatchSetup-x64.msi"
     if ($LASTEXITCODE) { throw 'MSI build failed.' }
 
@@ -85,6 +85,7 @@ try {
     New-Item -ItemType Directory -Path $portable -Force | Out-Null
     Copy-Item 'target\release\latch-link.exe' "$portable\latch.exe"
     Copy-Item 'target\release\LatchDesktop.exe' "$portable\LatchDesktop.exe"
+    Copy-Item $nodePath "$portable\node.exe"
     Copy-Item $browserStage "$portable\browser-runtime" -Recurse
     Compress-Archive -Path "$portable\*" -DestinationPath "$output\latch-windows-x64.zip" -Force
     Remove-Item $portable -Recurse -Force

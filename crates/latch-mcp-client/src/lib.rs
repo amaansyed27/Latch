@@ -393,7 +393,6 @@ async fn providers(
         match ensure_connection(state, server).await {
             Ok(connection) => result.push(McpProviderInfo {
                 server_id: server.server_id,
-                display_name: server.display_name.clone(),
                 connected: !connection.service.peer().is_transport_closed(),
                 cached_tools: connection.tools.len(),
                 catalogue_version: connection.catalogue_version,
@@ -401,7 +400,6 @@ async fn providers(
             }),
             Err(_) => result.push(McpProviderInfo {
                 server_id: server.server_id,
-                display_name: server.display_name.clone(),
                 connected: false,
                 cached_tools: 0,
                 catalogue_version: 0,
@@ -558,7 +556,8 @@ async fn ensure_connection<'a>(
             .refs
             .retain(|_, key| key.server_id != server.server_id);
     }
-    if !state.connections.contains_key(&server.server_id) {
+    let connection_missing = state.connections.get(&server.server_id).is_none();
+    if connection_missing {
         let service = connect(server).await?;
         let tools = fetch_catalogue(&service).await?;
         let catalogue_hash = catalogue_hash(&tools);
@@ -570,7 +569,6 @@ async fn ensure_connection<'a>(
                 tools,
                 catalogue_version: 1,
                 catalogue_hash,
-                display_name: server.display_name.clone(),
             },
         );
     }
@@ -634,10 +632,10 @@ async fn prune_removed(state: &mut ManagerState, servers: &[McpServerConfig]) {
         .connections
         .iter()
         .filter_map(|(server_id, connection)| {
-            (!allowed
+            allowed
                 .get(server_id)
-                .is_some_and(|fingerprint| *fingerprint == connection.fingerprint))
-            .then_some(*server_id)
+                .is_none_or(|fingerprint| *fingerprint != connection.fingerprint)
+                .then_some(*server_id)
         })
         .collect::<Vec<_>>();
     for server_id in remove {

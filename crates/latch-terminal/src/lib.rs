@@ -4,7 +4,7 @@ use std::{
     collections::HashMap,
     io::{Read, Write},
     path::Path,
-    sync::{Arc, Mutex, MutexGuard, PoisonError},
+    sync::{Arc, Mutex, MutexGuard, PoisonError, Weak},
     thread::{self, JoinHandle},
 };
 #[cfg(windows)]
@@ -142,10 +142,11 @@ impl TerminalManager {
             .master
             .try_clone_reader()
             .map_err(|error| TerminalError::Create(error.to_string()))?;
-        let writer = pair
-            .master
-            .take_writer()
-            .map_err(|error| TerminalError::Create(error.to_string()))?;
+        let writer = Arc::new(Mutex::new(
+            pair.master
+                .take_writer()
+                .map_err(|error| TerminalError::Create(error.to_string()))?,
+        ));
 
         let mut command = CommandBuilder::new(&profile.program);
         command.args(&profile.args);
@@ -160,7 +161,7 @@ impl TerminalManager {
         let job = attach_windows_job(child.as_ref())?;
 
         let output = Arc::new(Mutex::new(OutputRing::default()));
-        let reader_task = spawn_reader(reader, Arc::clone(&output));
+        let reader_task = spawn_reader(reader, Arc::clone(&output), Arc::downgrade(&writer));
         let terminal_id = TerminalId::new();
         let pid = child.process_id();
         let terminal = ManagedTerminal {
@@ -174,7 +175,7 @@ impl TerminalManager {
             rows,
             cols,
             #[cfg(windows)]
-            _job: Some(job),
+            job: Some(job),
         };
         lock(&self.terminals).insert(terminal_id, Arc::new(Mutex::new(terminal)));
         info!(%terminal_id, ?pid, profile = %profile.id, "persistent terminal created");
@@ -196,8 +197,9 @@ impl TerminalManager {
         terminal.ensure_running(terminal_id)?;
         let writer = terminal
             .writer
-            .as_mut()
+            .as_ref()
             .ok_or(TerminalError::NotRunning(terminal_id))?;
+        let mut writer = lock(writer);
         writer.write_all(text.as_bytes())?;
         writer.flush()?;
         Ok(())
@@ -324,14 +326,14 @@ struct ManagedTerminal {
     profile: ShellProfile,
     master: Option<Box<dyn MasterPty + Send>>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
-    writer: Option<Box<dyn Write + Send>>,
+    writer: Option<Arc<Mutex<Box<dyn Write + Send>>>>,
     output: Arc<Mutex<OutputRing>>,
     reader_task: Option<JoinHandle<()>>,
     killed: bool,
     rows: u16,
     cols: u16,
     #[cfg(windows)]
-    _job: Option<win32job::Job>,
+    job: Option<win32job::Job>,
 }
 
 impl ManagedTerminal {
@@ -359,7 +361,7 @@ impl ManagedTerminal {
         if matches!(self.state()?, TerminalState::Running) {
             self.child.kill()?;
             #[cfg(windows)]
-            self._job.take();
+            self.job.take();
             let _ = self.child.wait()?;
         }
         self.killed = true;
@@ -434,16 +436,37 @@ impl OutputRing {
 fn spawn_reader(
     mut reader: Box<dyn Read + Send>,
     output: Arc<Mutex<OutputRing>>,
+    writer: Weak<Mutex<Box<dyn Write + Send>>>,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
         let mut chunk = [0_u8; 8192];
+        let mut query_tail = Vec::with_capacity(3);
         loop {
             match reader.read(&mut chunk) {
                 Ok(0) => {
                     lock(&output).complete = true;
                     return;
                 }
-                Ok(count) => lock(&output).append(&chunk[..count]),
+                Ok(count) => {
+                    let bytes = &chunk[..count];
+                    let mut query_scan = Vec::with_capacity(query_tail.len() + bytes.len());
+                    query_scan.extend_from_slice(&query_tail);
+                    query_scan.extend_from_slice(bytes);
+                    if query_scan.windows(4).any(|window| window == b"\x1b[6n") {
+                        if let Some(writer) = writer.upgrade() {
+                            let mut writer = lock(&writer);
+                            if let Err(error) =
+                                writer.write_all(b"\x1b[1;1R").and_then(|()| writer.flush())
+                            {
+                                warn!(%error, "terminal cursor-position response failed");
+                            }
+                        }
+                    }
+                    query_tail.clear();
+                    let keep = query_scan.len().min(3);
+                    query_tail.extend_from_slice(&query_scan[query_scan.len() - keep..]);
+                    lock(&output).append(bytes);
+                }
                 Err(error) => {
                     warn!(%error, "terminal output reader failed");
                     lock(&output).complete = true;
@@ -581,15 +604,12 @@ fn command_exists(program: &str) -> bool {
 
 #[cfg(windows)]
 fn find_git_bash() -> Option<PathBuf> {
-    for path in [
+    [
         PathBuf::from(r"C:\Program Files\Git\bin\bash.exe"),
         PathBuf::from(r"C:\Program Files\Git\usr\bin\bash.exe"),
-    ] {
-        if path.is_file() {
-            return Some(path);
-        }
-    }
-    None
+    ]
+    .into_iter()
+    .find(|path| path.is_file())
 }
 
 #[cfg(windows)]
@@ -619,7 +639,10 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 #[cfg(test)]
 mod tests {
-    use std::{thread, time::Duration};
+    use std::{
+        thread,
+        time::{Duration, Instant},
+    };
 
     use super::*;
 
@@ -636,18 +659,37 @@ mod tests {
         manager
             .write(created.terminal_id, "echo LATCH_PTY_TEST\r\n")
             .unwrap();
-        thread::sleep(Duration::from_millis(350));
-        let first = manager
-            .snapshot(created.terminal_id, None, Some(32 * 1024))
-            .unwrap();
-        assert!(first.logical_screen.contains("LATCH_PTY_TEST"));
+        let first_deadline = Instant::now() + Duration::from_secs(5);
+        let first = loop {
+            let snapshot = manager
+                .snapshot(created.terminal_id, None, Some(32 * 1024))
+                .unwrap();
+            if snapshot.logical_screen.contains("LATCH_PTY_TEST") {
+                break snapshot;
+            }
+            assert!(
+                Instant::now() < first_deadline,
+                "timed out waiting for first terminal output: {snapshot:?}"
+            );
+            thread::sleep(Duration::from_millis(50));
+        };
         manager
             .write(created.terminal_id, "echo SECOND\r\n")
             .unwrap();
-        thread::sleep(Duration::from_millis(250));
-        let second = manager
-            .snapshot(created.terminal_id, Some(first.sequence), Some(32 * 1024))
-            .unwrap();
+        let second_deadline = Instant::now() + Duration::from_secs(5);
+        let second = loop {
+            let snapshot = manager
+                .snapshot(created.terminal_id, Some(first.sequence), Some(32 * 1024))
+                .unwrap();
+            if snapshot.output.contains("SECOND") {
+                break snapshot;
+            }
+            assert!(
+                Instant::now() < second_deadline,
+                "timed out waiting for incremental terminal output: {snapshot:?}"
+            );
+            thread::sleep(Duration::from_millis(50));
+        };
         assert!(second.output.contains("SECOND"));
         manager.kill(created.terminal_id).unwrap();
     }

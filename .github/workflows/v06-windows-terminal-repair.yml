@@ -17,15 +17,27 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - name: Make PTY test tolerate Windows startup latency
+      - name: Make PTY test deterministic on Windows
         shell: pwsh
         run: |
           $path = 'crates/latch-terminal/src/lib.rs'
           $text = Get-Content $path -Raw
-          if (-not $text.Contains('thread::sleep(Duration::from_millis(350));')) { throw 'first PTY wait marker missing' }
-          if (-not $text.Contains('thread::sleep(Duration::from_millis(250));')) { throw 'second PTY wait marker missing' }
+          $oldCreate = '        let created = manager.create(None, &cwd, 24, 100).unwrap();'
+          $newCreate = @'
+          #[cfg(windows)]
+          let profile_id = Some("cmd");
+          #[cfg(not(windows))]
+          let profile_id = None;
+          let created = manager.create(profile_id, &cwd, 24, 100).unwrap();
+          '@
+          if (-not $text.Contains($oldCreate)) { throw 'PTY create marker missing' }
+          $text = $text.Replace($oldCreate, $newCreate.TrimEnd())
+          $text = $text.Replace('"echo LATCH_PTY_TEST\r\n"', '"echo LATCH_PTY_TEST\r"')
+          $text = $text.Replace('"echo SECOND\r\n"', '"echo SECOND\r"')
           $text = $text.Replace('thread::sleep(Duration::from_millis(350));', 'thread::sleep(Duration::from_secs(2));')
           $text = $text.Replace('thread::sleep(Duration::from_millis(250));', 'thread::sleep(Duration::from_secs(2));')
+          $text = $text.Replace('assert!(first.logical_screen.contains("LATCH_PTY_TEST"));', 'assert!(first.logical_screen.contains("LATCH_PTY_TEST"), "first snapshot: {first:?}");')
+          $text = $text.Replace('assert!(second.output.contains("SECOND"));', 'assert!(second.output.contains("SECOND"), "second snapshot: {second:?}");')
           Set-Content $path $text -NoNewline
       - run: cargo fmt --all
       - run: cargo test --locked -p latch-terminal
@@ -36,5 +48,5 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git rm .github/workflows/v06-windows-terminal-repair.yml
           git add crates/latch-terminal/src/lib.rs
-          git commit -m "test: tolerate Windows PTY startup latency"
+          git commit -m "test: make Windows PTY checks deterministic"
           git push origin HEAD:feat/v0.6-windows-agent-runtime

@@ -62,6 +62,7 @@ The Router remains a relay/control plane. It must not durably store file content
 - A malicious file/page/MCP result can attempt prompt injection against the remote model even though Latch itself does not elevate that text to policy.
 - Browser persistent profiles may accumulate authenticated data if the user explicitly signs into the Latch-owned profile; protect that Windows account accordingly.
 - Raw input is inherently less semantic and less verifiable than UIA/DOM control; keep it denied/ask unless needed.
+- Pending `ask` approval requests are persisted until the user resolves them; V0.6 does not yet expire unresolved prompts by age. Session grants do expire, but a later beta should add an explicit pending-request TTL.
 - Private-beta MSI is unsigned, so authenticity currently relies on the GitHub release origin plus published SHA256 checksums.
 
 ## Release requirement

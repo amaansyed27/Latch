@@ -7,7 +7,6 @@ use std::{
 };
 
 use latch_core::{SessionId, UiRef};
-use tracing::warn;
 use uiautomation::{
     clipboards::Clipboard,
     patterns::{
@@ -350,12 +349,16 @@ struct UiWorker {
 }
 
 fn run_worker(receiver: Receiver<WorkerCommand>) {
-    let initialized = UIAutomation::new()
-        .and_then(|automation| automation.get_control_view_walker().map(|walker| (automation, walker)));
+    let initialized = UIAutomation::new().and_then(|automation| {
+        automation
+            .get_control_view_walker()
+            .map(|walker| (automation, walker))
+    });
     let Ok((automation, walker)) = initialized else {
-        let message = initialized
-            .err()
-            .map_or_else(|| "unknown UIA initialization failure".to_owned(), |error| error.to_string());
+        let message = initialized.err().map_or_else(
+            || "unknown UIA initialization failure".to_owned(),
+            |error| error.to_string(),
+        );
         fail_worker(receiver, WindowsError::UiUnavailable(message));
         return;
     };
@@ -479,15 +482,15 @@ impl UiWorker {
     }
 
     fn active_window(&mut self, session_id: SessionId) -> Result<SemanticElement, WindowsError> {
-        let mut current = self.automation.get_focused_element().map_err(map_uia_error)?;
+        let mut current = self
+            .automation
+            .get_focused_element()
+            .map_err(map_uia_error)?;
         for _ in 0..16 {
             if current.get_control_type().map_err(map_uia_error)? == ControlType::Window {
                 return self.semantic(session_id, &current);
             }
-            current = self
-                .walker
-                .get_parent(&current)
-                .map_err(map_uia_error)?;
+            current = self.walker.get_parent(&current).map_err(map_uia_error)?;
         }
         self.semantic(session_id, &current)
     }
@@ -637,10 +640,9 @@ impl UiWorker {
             {
                 return Ok(current);
             }
-            current = self
-                .walker
-                .get_next_sibling(&current)
-                .map_err(|_| WindowsError::UiUnavailable(format!("no top-level window for pid {pid}")))?;
+            current = self.walker.get_next_sibling(&current).map_err(|_| {
+                WindowsError::UiUnavailable(format!("no top-level window for pid {pid}"))
+            })?;
         }
     }
 
@@ -732,9 +734,12 @@ impl UiWorker {
                 .ok()
                 .and_then(|pattern| pattern.get_value().ok())
         };
-        let role = element
-            .get_localized_control_type()
-            .unwrap_or_else(|_| format!("{:?}", element.get_control_type().unwrap_or(ControlType::Custom)));
+        let role = element.get_localized_control_type().unwrap_or_else(|_| {
+            format!(
+                "{:?}",
+                element.get_control_type().unwrap_or(ControlType::Custom)
+            )
+        });
         Ok(SemanticElement {
             element_ref,
             role: role.to_ascii_lowercase(),
@@ -780,24 +785,36 @@ impl UiWorker {
         Ok(element_ref)
     }
 
-    fn element(&mut self, session_id: SessionId, element_ref: UiRef) -> Result<&UIElement, WindowsError> {
-        let Some(record) = self.refs.get(&element_ref) else {
-            return Err(WindowsError::StaleRef);
-        };
-        if record.session_id != session_id {
-            return Err(WindowsError::RefSessionMismatch);
-        }
-        match record.element.get_runtime_id() {
-            Ok(runtime_id) if runtime_id == record.runtime_id => Ok(&record.element),
-            _ => {
-                self.refs.remove(&element_ref);
-                Err(WindowsError::StaleRef)
+    fn element(
+        &mut self,
+        session_id: SessionId,
+        element_ref: UiRef,
+    ) -> Result<&UIElement, WindowsError> {
+        let is_stale = {
+            let Some(record) = self.refs.get(&element_ref) else {
+                return Err(WindowsError::StaleRef);
+            };
+            if record.session_id != session_id {
+                return Err(WindowsError::RefSessionMismatch);
             }
+            !matches!(
+                record.element.get_runtime_id(),
+                Ok(runtime_id) if runtime_id == record.runtime_id
+            )
+        };
+        if is_stale {
+            self.refs.remove(&element_ref);
+            return Err(WindowsError::StaleRef);
         }
+        Ok(&self
+            .refs
+            .get(&element_ref)
+            .expect("validated UI ref must still exist")
+            .element)
     }
-
     fn drop_session(&mut self, session_id: SessionId) {
-        self.refs.retain(|_, record| record.session_id != session_id);
+        self.refs
+            .retain(|_, record| record.session_id != session_id);
         self.runtime_refs
             .retain(|(candidate, _), _| *candidate != session_id);
     }
@@ -845,13 +862,7 @@ fn reject_secure_desktop(pid: u32) -> Result<(), WindowsError> {
 
 fn process_name(pid: u32) -> Option<String> {
     let output = Command::new("tasklist.exe")
-        .args([
-            "/FI",
-            &format!("PID eq {pid}"),
-            "/FO",
-            "CSV",
-            "/NH",
-        ])
+        .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
         .output()
         .ok()?;
     if !output.status.success() {
@@ -872,7 +883,10 @@ fn process_name(pid: u32) -> Option<String> {
 fn map_uia_error(error: uiautomation::Error) -> WindowsError {
     let text = error.to_string();
     let normalized = text.to_ascii_lowercase();
-    if normalized.contains("0x80070005") || normalized.contains("access is denied") || normalized.contains("access denied") {
+    if normalized.contains("0x80070005")
+        || normalized.contains("access is denied")
+        || normalized.contains("access denied")
+    {
         WindowsError::TargetElevated
     } else {
         WindowsError::UiUnavailable(text)

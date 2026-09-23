@@ -98,7 +98,9 @@ impl SessionManager {
         self.cleanup();
         let mut sessions = lock(&self.sessions);
         if sessions.len() >= MAX_SESSIONS {
-            return Err(format!("at most {MAX_SESSIONS} active sessions are allowed"));
+            return Err(format!(
+                "at most {MAX_SESSIONS} active sessions are allowed"
+            ));
         }
         let now = now_ms();
         let record = SessionRecord {
@@ -178,11 +180,7 @@ impl SessionManager {
         })
     }
 
-    pub fn bind_process(
-        &self,
-        session_id: SessionId,
-        process_id: ProcessId,
-    ) -> Result<(), String> {
+    pub fn bind_process(&self, session_id: SessionId, process_id: ProcessId) -> Result<(), String> {
         self.bind(session_id, |session| {
             session.process_ids.insert(process_id);
         })
@@ -205,15 +203,21 @@ impl SessionManager {
     }
 
     pub fn owns_workspace(&self, session_id: SessionId, workspace_id: WorkspaceId) -> bool {
-        self.owns(session_id, |session| session.workspace_ids.contains(&workspace_id))
+        self.owns(session_id, |session| {
+            session.workspace_ids.contains(&workspace_id)
+        })
     }
 
     pub fn owns_terminal(&self, session_id: SessionId, terminal_id: TerminalId) -> bool {
-        self.owns(session_id, |session| session.terminal_ids.contains(&terminal_id))
+        self.owns(session_id, |session| {
+            session.terminal_ids.contains(&terminal_id)
+        })
     }
 
     pub fn owns_process(&self, session_id: SessionId, process_id: ProcessId) -> bool {
-        self.owns(session_id, |session| session.process_ids.contains(&process_id))
+        self.owns(session_id, |session| {
+            session.process_ids.contains(&process_id)
+        })
     }
 
     pub fn owns_context(&self, session_id: SessionId, context_id: BrowserContextId) -> bool {
@@ -244,7 +248,11 @@ impl SessionManager {
         self.persist()
     }
 
-    fn bind(&self, session_id: SessionId, apply: impl FnOnce(&mut SessionRecord)) -> Result<(), String> {
+    fn bind(
+        &self,
+        session_id: SessionId,
+        apply: impl FnOnce(&mut SessionRecord),
+    ) -> Result<(), String> {
         let mut sessions = lock(&self.sessions);
         let session = sessions
             .get_mut(&session_id)
@@ -356,7 +364,9 @@ mod tests {
         let manager = SessionManager::new(temp.path());
         let session = manager.create().unwrap();
         let workspace = WorkspaceId::new();
-        manager.bind_workspace(session.session_id, workspace).unwrap();
+        manager
+            .bind_workspace(session.session_id, workspace)
+            .unwrap();
         assert!(manager.owns_workspace(session.session_id, workspace));
         let closed = manager.close(session.session_id).unwrap();
         assert_eq!(closed.state, SessionState::Closed);

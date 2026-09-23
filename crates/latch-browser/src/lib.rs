@@ -146,10 +146,7 @@ impl BrowserManager {
         }
     }
 
-    pub fn with_bridge(
-        profile_root: impl Into<PathBuf>,
-        bridge_path: impl Into<PathBuf>,
-    ) -> Self {
+    pub fn with_bridge(profile_root: impl Into<PathBuf>, bridge_path: impl Into<PathBuf>) -> Self {
         Self {
             process: Mutex::new(None),
             bridge_path: bridge_path.into(),

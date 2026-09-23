@@ -252,10 +252,8 @@ fn spawn_remote_request(
     let engine = Arc::clone(engine);
     let sender = sender.clone();
     requests.spawn(async move {
-        let execution = tokio::task::spawn_blocking(move || {
-            execute_remote(&engine, request_id, request)
-        })
-        .await;
+        let execution =
+            tokio::task::spawn_blocking(move || execute_remote(&engine, request_id, request)).await;
 
         match execution {
             Ok(response) => match serde_json::to_string(&response) {

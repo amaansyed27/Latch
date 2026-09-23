@@ -89,7 +89,11 @@ impl PermissionPolicy {
             files_read: files,
             files_write: files,
             exec: commands,
-            terminal: if legacy.commands { PermissionMode::Ask } else { PermissionMode::Deny },
+            terminal: if legacy.commands {
+                PermissionMode::Ask
+            } else {
+                PermissionMode::Deny
+            },
             application_control: control,
             ui_inspection: control,
             ui_control: control,

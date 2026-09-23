@@ -1,4 +1,7 @@
-use std::{fs, io, time::{SystemTime, UNIX_EPOCH}};
+use std::{
+    fs, io,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use latch_core::{ApprovalId, SessionId};
 use serde::{Deserialize, Serialize};
@@ -145,7 +148,10 @@ impl LocalStore {
         let Some(index) = state.grants.iter().position(|grant| {
             grant.capability == capability
                 && grant.session_id == session_id
-                && grant.summary.as_deref().is_none_or(|expected| expected == summary)
+                && grant
+                    .summary
+                    .as_deref()
+                    .is_none_or(|expected| expected == summary)
         }) else {
             self.save_approval_state(&state)?;
             return Ok(false);

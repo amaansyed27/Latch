@@ -22,14 +22,20 @@ pub enum AgentRequest {
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum SessionRequest {
     Create,
-    Inspect { session_id: SessionId },
+    Inspect {
+        session_id: SessionId,
+    },
     Update {
         session_id: SessionId,
         #[serde(default)]
         workspace_ids: Vec<WorkspaceId>,
     },
-    Close { session_id: SessionId },
-    Cancel { session_id: SessionId },
+    Close {
+        session_id: SessionId,
+    },
+    Cancel {
+        session_id: SessionId,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -40,7 +46,9 @@ pub enum InspectRequest {
         #[serde(default)]
         limit: Option<usize>,
     },
-    ActiveWindow { session_id: SessionId },
+    ActiveWindow {
+        session_id: SessionId,
+    },
     UiTree {
         session_id: SessionId,
         #[serde(default)]
@@ -76,8 +84,12 @@ pub enum InspectRequest {
         #[serde(default)]
         limit: Option<usize>,
     },
-    Audio { session_id: SessionId },
-    Clipboard { session_id: SessionId },
+    Audio {
+        session_id: SessionId,
+    },
+    Clipboard {
+        session_id: SessionId,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -89,8 +101,14 @@ pub enum FilesRequest {
         #[serde(default)]
         relative_path: Option<String>,
     },
-    List { workspace_id: WorkspaceId, path: String },
-    Stat { workspace_id: WorkspaceId, path: String },
+    List {
+        workspace_id: WorkspaceId,
+        path: String,
+    },
+    Stat {
+        workspace_id: WorkspaceId,
+        path: String,
+    },
     Read {
         workspace_id: WorkspaceId,
         path: String,
@@ -125,7 +143,10 @@ pub enum FilesRequest {
         #[serde(default)]
         max_results: Option<usize>,
     },
-    Mkdir { workspace_id: WorkspaceId, path: String },
+    Mkdir {
+        workspace_id: WorkspaceId,
+        path: String,
+    },
     Move {
         workspace_id: WorkspaceId,
         from: String,
@@ -133,7 +154,10 @@ pub enum FilesRequest {
         #[serde(default)]
         overwrite: bool,
     },
-    Delete { workspace_id: WorkspaceId, path: String },
+    Delete {
+        workspace_id: WorkspaceId,
+        path: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -159,7 +183,10 @@ pub enum ExecDomainRequest {
         #[serde(default)]
         args: Vec<String>,
     },
-    Poll { session_id: SessionId, job_id: ProcessId },
+    Poll {
+        session_id: SessionId,
+        job_id: ProcessId,
+    },
     Stdin {
         session_id: SessionId,
         job_id: ProcessId,
@@ -168,8 +195,13 @@ pub enum ExecDomainRequest {
         #[serde(default)]
         close_stdin: bool,
     },
-    Kill { session_id: SessionId, job_id: ProcessId },
-    TerminalProfiles { session_id: SessionId },
+    Kill {
+        session_id: SessionId,
+        job_id: ProcessId,
+    },
+    TerminalProfiles {
+        session_id: SessionId,
+    },
     TerminalCreate {
         session_id: SessionId,
         workspace_id: WorkspaceId,
@@ -207,7 +239,9 @@ pub enum ExecDomainRequest {
         session_id: SessionId,
         terminal_id: TerminalId,
     },
-    TerminalList { session_id: SessionId },
+    TerminalList {
+        session_id: SessionId,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -235,7 +269,10 @@ pub enum ActRequest {
         #[serde(default)]
         verification: VerificationMode,
     },
-    OpenTarget { session_id: SessionId, target: String },
+    OpenTarget {
+        session_id: SessionId,
+        target: String,
+    },
     ClipboardWrite {
         session_id: SessionId,
         text: String,
@@ -284,7 +321,10 @@ pub enum UiActionRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RawInputRequest {
-    MouseMove { x: i32, y: i32 },
+    MouseMove {
+        x: i32,
+        y: i32,
+    },
     MouseClick {
         #[serde(default = "default_left")]
         button: String,
@@ -307,13 +347,17 @@ pub enum RawInputRequest {
         #[serde(default)]
         modifiers: Vec<String>,
     },
-    Type { text: String },
+    Type {
+        text: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum BrowserRequest {
-    Status { session_id: SessionId },
+    Status {
+        session_id: SessionId,
+    },
     CreateContext {
         session_id: SessionId,
         #[serde(default)]
@@ -321,7 +365,9 @@ pub enum BrowserRequest {
         #[serde(default)]
         persistent: bool,
     },
-    ListContexts { session_id: SessionId },
+    ListContexts {
+        session_id: SessionId,
+    },
     CloseContext {
         session_id: SessionId,
         context_id: BrowserContextId,
@@ -337,13 +383,19 @@ pub enum BrowserRequest {
         #[serde(default)]
         context_id: Option<BrowserContextId>,
     },
-    CloseTab { session_id: SessionId, tab_id: TabId },
+    CloseTab {
+        session_id: SessionId,
+        tab_id: TabId,
+    },
     Navigate {
         session_id: SessionId,
         tab_id: TabId,
         url: String,
     },
-    Snapshot { session_id: SessionId, tab_id: TabId },
+    Snapshot {
+        session_id: SessionId,
+        tab_id: TabId,
+    },
     Find {
         session_id: SessionId,
         tab_id: TabId,
@@ -385,14 +437,22 @@ pub enum BrowserRequest {
         #[serde(default)]
         max_entries: Option<usize>,
     },
-    Screenshot { session_id: SessionId, tab_id: TabId },
-    PageState { session_id: SessionId, tab_id: TabId },
+    Screenshot {
+        session_id: SessionId,
+        tab_id: TabId,
+    },
+    PageState {
+        session_id: SessionId,
+        tab_id: TabId,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum ToolsRequest {
-    Providers { session_id: SessionId },
+    Providers {
+        session_id: SessionId,
+    },
     Search {
         session_id: SessionId,
         query: String,
@@ -401,7 +461,10 @@ pub enum ToolsRequest {
         #[serde(default)]
         max_results: Option<usize>,
     },
-    Describe { session_id: SessionId, tool_ref: ToolRefId },
+    Describe {
+        session_id: SessionId,
+        tool_ref: ToolRefId,
+    },
     Call {
         session_id: SessionId,
         tool_ref: ToolRefId,

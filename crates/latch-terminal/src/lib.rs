@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    env,
     io::{Read, Write},
     path::{Path, PathBuf},
     process::Command,
@@ -418,7 +417,10 @@ impl OutputRing {
     }
 }
 
-fn spawn_reader(mut reader: Box<dyn Read + Send>, output: Arc<Mutex<OutputRing>>) -> JoinHandle<()> {
+fn spawn_reader(
+    mut reader: Box<dyn Read + Send>,
+    output: Arc<Mutex<OutputRing>>,
+) -> JoinHandle<()> {
     thread::spawn(move || {
         let mut chunk = [0_u8; 8192];
         loop {
@@ -582,9 +584,9 @@ fn attach_windows_job(
 ) -> Result<win32job::Job, TerminalError> {
     use win32job::Job;
 
-    let raw = child
-        .as_raw_handle()
-        .ok_or_else(|| TerminalError::Create("ConPTY child process handle is unavailable".to_owned()))?;
+    let raw = child.as_raw_handle().ok_or_else(|| {
+        TerminalError::Create("ConPTY child process handle is unavailable".to_owned())
+    })?;
     let job = Job::create().map_err(|error| TerminalError::Create(error.to_string()))?;
     let mut limits = job
         .query_extended_limit_info()
@@ -625,14 +627,12 @@ mod tests {
             .snapshot(created.terminal_id, None, Some(32 * 1024))
             .unwrap();
         assert!(first.logical_screen.contains("LATCH_PTY_TEST"));
-        manager.write(created.terminal_id, "echo SECOND\r\n").unwrap();
+        manager
+            .write(created.terminal_id, "echo SECOND\r\n")
+            .unwrap();
         thread::sleep(Duration::from_millis(250));
         let second = manager
-            .snapshot(
-                created.terminal_id,
-                Some(first.sequence),
-                Some(32 * 1024),
-            )
+            .snapshot(created.terminal_id, Some(first.sequence), Some(32 * 1024))
             .unwrap();
         assert!(second.output.contains("SECOND"));
         manager.kill(created.terminal_id).unwrap();

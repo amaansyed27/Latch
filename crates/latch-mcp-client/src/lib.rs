@@ -145,10 +145,7 @@ impl McpManager {
         })
     }
 
-    pub fn list_tools(
-        &self,
-        server: &McpServerConfig,
-    ) -> Result<Vec<RemoteTool>, McpClientError> {
+    pub fn list_tools(&self, server: &McpServerConfig) -> Result<Vec<RemoteTool>, McpClientError> {
         self.request(|reply| ManagerCommand::List {
             server: server.clone(),
             reply,
@@ -189,7 +186,9 @@ impl McpManager {
         self.sender
             .send(build(reply))
             .map_err(|_| McpClientError::ManagerStopped)?;
-        receiver.recv().map_err(|_| McpClientError::ManagerStopped)?
+        receiver
+            .recv()
+            .map_err(|_| McpClientError::ManagerStopped)?
     }
 }
 
@@ -317,14 +316,8 @@ fn run_manager(receiver: mpsc::Receiver<ManagerCommand>) {
                     max_results,
                     reply,
                 } => {
-                    let result = search_tools(
-                        &mut state,
-                        &servers,
-                        &query,
-                        provider_id,
-                        max_results,
-                    )
-                    .await;
+                    let result =
+                        search_tools(&mut state, &servers, &query, provider_id, max_results).await;
                     let _ = reply.send(result);
                 }
                 ManagerCommand::Describe {
@@ -380,8 +373,7 @@ fn fail_manager(receiver: mpsc::Receiver<ManagerCommand>, error: McpClientError)
             ManagerCommand::Describe { reply, .. } => {
                 let _ = reply.send(Err(error.clone_without_source()));
             }
-            ManagerCommand::CallRef { reply, .. }
-            | ManagerCommand::CallName { reply, .. } => {
+            ManagerCommand::CallRef { reply, .. } | ManagerCommand::CallName { reply, .. } => {
                 let _ = reply.send(Err(error.clone_without_source()));
             }
             ManagerCommand::List { reply, .. } => {
@@ -431,11 +423,18 @@ async fn search_tools(
     prune_removed(state, servers).await;
     let query = query.trim().to_ascii_lowercase();
     let mut ranked = Vec::new();
-    for server in visible_servers(servers).filter(|server| provider_id.is_none_or(|id| id == server.server_id)) {
+    for server in visible_servers(servers)
+        .filter(|server| provider_id.is_none_or(|id| id == server.server_id))
+    {
         let connection = ensure_connection(state, server).await?;
         for tool in &connection.tools {
             if let Some(score) = relevance(tool, &query) {
-                ranked.push((score, server.server_id, server.display_name.clone(), tool.clone()));
+                ranked.push((
+                    score,
+                    server.server_id,
+                    server.display_name.clone(),
+                    tool.clone(),
+                ));
             }
         }
     }
@@ -546,14 +545,19 @@ async fn ensure_connection<'a>(
         return Err(McpClientError::ServerDisabled);
     }
     let fingerprint = config_fingerprint(server);
-    let replace = state.connections.get(&server.server_id).is_some_and(|connection| {
-        connection.fingerprint != fingerprint || connection.service.peer().is_transport_closed()
-    });
+    let replace = state
+        .connections
+        .get(&server.server_id)
+        .is_some_and(|connection| {
+            connection.fingerprint != fingerprint || connection.service.peer().is_transport_closed()
+        });
     if replace {
         if let Some(connection) = state.connections.remove(&server.server_id) {
             let _ = connection.service.cancel().await;
         }
-        state.refs.retain(|_, key| key.server_id != server.server_id);
+        state
+            .refs
+            .retain(|_, key| key.server_id != server.server_id);
     }
     if !state.connections.contains_key(&server.server_id) {
         let service = connect(server).await?;
@@ -577,7 +581,9 @@ async fn ensure_connection<'a>(
         .ok_or(McpClientError::Connect("connection disappeared".to_owned()))
 }
 
-async fn connect(server: &McpServerConfig) -> Result<RunningService<RoleClient, ()>, McpClientError> {
+async fn connect(
+    server: &McpServerConfig,
+) -> Result<RunningService<RoleClient, ()>, McpClientError> {
     match &server.transport {
         McpTransportConfig::Stdio {
             command,
@@ -616,8 +622,8 @@ async fn fetch_catalogue(
             "MCP catalogue exceeds {MAX_CATALOGUE_TOOLS} tools"
         )));
     }
-    let value = serde_json::to_value(tools)
-        .map_err(|error| McpClientError::Protocol(error.to_string()))?;
+    let value =
+        serde_json::to_value(tools).map_err(|error| McpClientError::Protocol(error.to_string()))?;
     parse_tools_array(&value)
 }
 
@@ -644,7 +650,9 @@ async fn prune_removed(state: &mut ManagerState, servers: &[McpServerConfig]) {
 }
 
 fn visible_servers(servers: &[McpServerConfig]) -> impl Iterator<Item = &McpServerConfig> {
-    servers.iter().filter(|server| server.enabled && server.allow_remote)
+    servers
+        .iter()
+        .filter(|server| server.enabled && server.allow_remote)
 }
 
 fn find_server(

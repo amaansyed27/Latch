@@ -474,7 +474,10 @@ mod tests {
         let config = store.load().unwrap();
         assert_eq!(config.capability_policy.files_read, PermissionMode::Allow);
         assert_eq!(config.capability_policy.exec, PermissionMode::Deny);
-        assert_eq!(config.capability_policy.mcp_discovery, PermissionMode::Allow);
+        assert_eq!(
+            config.capability_policy.mcp_discovery,
+            PermissionMode::Allow
+        );
         assert_eq!(config.permission_policy_version, CURRENT_POLICY_VERSION);
     }
 

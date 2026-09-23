@@ -625,7 +625,10 @@ mod tests {
         assert_eq!(value["version"], json!(3));
         assert_eq!(value["status"], json!("ok"));
         assert_eq!(value["result"]["type"], json!("exec"));
-        assert_eq!(serde_json::from_value::<ResponseEnvelope>(value).unwrap(), response);
+        assert_eq!(
+            serde_json::from_value::<ResponseEnvelope>(value).unwrap(),
+            response
+        );
     }
 
     #[test]

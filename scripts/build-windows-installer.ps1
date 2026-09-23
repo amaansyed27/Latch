@@ -3,8 +3,11 @@ param([string]$OutputDirectory = 'artifacts')
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $output = Join-Path $root $OutputDirectory
-$expectedMsiVersion = '0.5.1'
+$expectedMsiVersion = '0.6.0'
+$expectedBinaryVersion = 'latch 0.6.0-beta.1'
 $expectedUpgradeCode = '6B9638AD-38B8-4EA2-88EF-76D9961EBC4C'
+$browserSource = Join-Path $root 'runtime\browser'
+$browserStage = Join-Path $output 'browser-runtime-stage'
 
 Push-Location $root
 try {
@@ -20,15 +23,48 @@ try {
 
     cargo build --release -p latch-link -p latch-desktop
     if ($LASTEXITCODE) { throw 'Release build failed.' }
+    $binaryVersion = & 'target\release\latch-link.exe' --version
+    if ($binaryVersion -ne $expectedBinaryVersion) {
+        throw "Unexpected binary version: $binaryVersion; expected $expectedBinaryVersion"
+    }
 
     New-Item -ItemType Directory -Path $output -Force | Out-Null
-    Remove-Item "$output\LatchSetup-x64.msi", "$output\LatchSetup-x64.wixpdb", "$output\latch-windows-x64.zip", "$output\SHA256SUMS.txt" -Force -ErrorAction SilentlyContinue
+    Remove-Item "$output\LatchSetup-x64.msi", "$output\LatchSetup-x64.wixpdb", "$output\latch-windows-x64.zip", "$output\SHA256SUMS.txt", $browserStage -Recurse -Force -ErrorAction SilentlyContinue
+
+    # Build the exact browser runtime that will ship. Playwright is pinned in
+    # runtime/browser/package.json; --no-install prevents npx from resolving a
+    # different package from the network.
+    Push-Location $browserSource
+    try {
+        $oldBrowsersPath = $env:PLAYWRIGHT_BROWSERS_PATH
+        $env:PLAYWRIGHT_BROWSERS_PATH = '0'
+        npm install --omit=dev --ignore-scripts --package-lock=false
+        if ($LASTEXITCODE) { throw 'Pinned Playwright dependency install failed.' }
+        npx --no-install playwright install chromium
+        if ($LASTEXITCODE) { throw 'Pinned Chromium installation failed.' }
+    } finally {
+        if ($null -eq $oldBrowsersPath) { Remove-Item Env:PLAYWRIGHT_BROWSERS_PATH -ErrorAction SilentlyContinue }
+        else { $env:PLAYWRIGHT_BROWSERS_PATH = $oldBrowsersPath }
+        Pop-Location
+    }
+
+    New-Item -ItemType Directory -Path $browserStage -Force | Out-Null
+    Copy-Item "$browserSource\bridge.mjs" $browserStage
+    Copy-Item "$browserSource\package.json" $browserStage
+    Copy-Item "$browserSource\node_modules" "$browserStage\node_modules" -Recurse
+    $nodePath = (Get-Command node.exe -ErrorAction Stop).Source
+    Copy-Item $nodePath "$browserStage\node.exe"
+    if (-not (Test-Path "$browserStage\node_modules\playwright\package.json")) { throw 'Playwright runtime missing from browser stage.' }
+    if (-not (Get-ChildItem "$browserStage\node_modules\playwright-core\.local-browsers" -Recurse -Filter chrome.exe -ErrorAction SilentlyContinue | Select-Object -First 1)) {
+        throw 'Pinned Chromium payload missing from browser stage.'
+    }
 
     wix build installer/Latch.wxs `
         -arch x64 `
         -pdbtype none `
         -d "SourceDir=$root\target\release" `
         -d "IconDir=$root\crates\latch-desktop\icons" `
+        -d "BrowserRuntimeDir=$browserStage" `
         -o "$output\LatchSetup-x64.msi"
     if ($LASTEXITCODE) { throw 'MSI build failed.' }
 
@@ -49,6 +85,7 @@ try {
     New-Item -ItemType Directory -Path $portable -Force | Out-Null
     Copy-Item 'target\release\latch-link.exe' "$portable\latch.exe"
     Copy-Item 'target\release\LatchDesktop.exe' "$portable\LatchDesktop.exe"
+    Copy-Item $browserStage "$portable\browser-runtime" -Recurse
     Compress-Archive -Path "$portable\*" -DestinationPath "$output\latch-windows-x64.zip" -Force
     Remove-Item $portable -Recurse -Force
 
@@ -58,5 +95,6 @@ try {
 
     Write-Output "Built $output\LatchSetup-x64.msi (MSI ProductVersion $productVersion)"
 } finally {
+    Remove-Item $browserStage -Recurse -Force -ErrorAction SilentlyContinue
     Pop-Location
 }

@@ -21,7 +21,7 @@ try {
         throw "Unexpected WiX UpgradeCode: $($package.UpgradeCode)"
     }
 
-    cargo build --release -p latch-link -p latch-desktop
+    cargo build --locked --release -p latch-link -p latch-desktop
     if ($LASTEXITCODE) { throw 'Release build failed.' }
     $binaryVersion = & 'target\release\latch-link.exe' --version
     if ($binaryVersion -ne $expectedBinaryVersion) {

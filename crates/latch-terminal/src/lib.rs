@@ -1,11 +1,14 @@
+#[cfg(not(windows))]
+use std::env;
 use std::{
     collections::HashMap,
     io::{Read, Write},
-    path::{Path, PathBuf},
-    process::Command,
+    path::Path,
     sync::{Arc, Mutex, MutexGuard, PoisonError},
     thread::{self, JoinHandle},
 };
+#[cfg(windows)]
+use std::{path::PathBuf, process::Command};
 
 use latch_core::TerminalId;
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};

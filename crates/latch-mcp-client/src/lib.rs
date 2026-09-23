@@ -393,6 +393,7 @@ async fn providers(
         match ensure_connection(state, server).await {
             Ok(connection) => result.push(McpProviderInfo {
                 server_id: server.server_id,
+                display_name: server.display_name.clone(),
                 connected: !connection.service.peer().is_transport_closed(),
                 cached_tools: connection.tools.len(),
                 catalogue_version: connection.catalogue_version,
@@ -400,6 +401,7 @@ async fn providers(
             }),
             Err(_) => result.push(McpProviderInfo {
                 server_id: server.server_id,
+                display_name: server.display_name.clone(),
                 connected: false,
                 cached_tools: 0,
                 catalogue_version: 0,

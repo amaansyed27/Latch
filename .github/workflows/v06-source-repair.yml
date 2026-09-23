@@ -22,47 +22,24 @@ jobs:
           from pathlib import Path
           path = Path('crates/latch-mcp-client/src/lib.rs')
           text = path.read_text()
-          text = text.replace('    display_name: String,\n', '', 1)
-          text = text.replace('''    if !state.connections.contains_key(&server.server_id) {
-              let service = connect(server).await?;
-              let tools = fetch_catalogue(&service).await?;
-              let catalogue_hash = catalogue_hash(&tools);
-              state.connections.insert(
-                  server.server_id,
-                  Connection {
-                      fingerprint,
-                      service,
-                      tools,
-                      catalogue_version: 1,
-                      catalogue_hash,
-                      display_name: server.display_name.clone(),
-                  },
-              );
-          }
-          ''', '''    if let std::collections::hash_map::Entry::Vacant(entry) =
-              state.connections.entry(server.server_id)
-          {
-              let service = connect(server).await?;
-              let tools = fetch_catalogue(&service).await?;
-              let catalogue_hash = catalogue_hash(&tools);
-              entry.insert(Connection {
-                  fingerprint,
-                  service,
-                  tools,
-                  catalogue_version: 1,
-                  catalogue_hash,
-              });
-          }
-          ''', 1)
-          text = text.replace('''            (!allowed
+          text = text.replace('    display_name: String,\n', '')
+          text = text.replace('                display_name: server.display_name.clone(),\n', '')
+          text = text.replace(
+              '    if !state.connections.contains_key(&server.server_id) {\n',
+              '    let connection_missing = state.connections.get(&server.server_id).is_none();\n    if connection_missing {\n',
+          )
+          text = text.replace(
+              '''            (!allowed
                   .get(server_id)
                   .is_some_and(|fingerprint| *fingerprint == connection.fingerprint))
               .then_some(*server_id)
-          ''', '''            allowed
-                  .get(server_id)
-                  .is_none_or(|fingerprint| *fingerprint != connection.fingerprint)
-                  .then_some(*server_id)
-          ''', 1)
+''',
+              '''            allowed
+                .get(server_id)
+                .is_none_or(|fingerprint| *fingerprint != connection.fingerprint)
+                .then_some(*server_id)
+''',
+          )
           path.write_text(text)
           PY
       - run: cargo fmt --all

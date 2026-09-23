@@ -131,7 +131,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install
+      - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
@@ -154,7 +154,7 @@ jobs:
         with:
           node-version: 22
       - run: cargo build --locked -p latch-link
-      - run: npm install --prefix router
+      - run: npm ci --prefix router
       - run: npm run build --prefix router
       - run: node router/scripts/e2e-local.mjs
       - run: npm run e2e:mcp --prefix router

@@ -24,8 +24,20 @@ replacements = [
         "        let reader_task = spawn_reader(reader, Arc::clone(&output), Arc::downgrade(&writer));",
     ),
     (
+        "            _job: Some(job),",
+        "            job: Some(job),",
+    ),
+    (
         "    writer: Option<Box<dyn Write + Send>>,%NL%".replace("%NL%", "\n"),
         "    writer: Option<Arc<Mutex<Box<dyn Write + Send>>>>,%NL%".replace("%NL%", "\n"),
+    ),
+    (
+        "    _job: Option<win32job::Job>,",
+        "    job: Option<win32job::Job>,",
+    ),
+    (
+        "            self._job.take();",
+        "            self.job.take();",
     ),
     (
         '''        let writer = terminal
@@ -108,6 +120,27 @@ replacements = [
             }
         }
     })
+}''',
+    ),
+    (
+        '''fn find_git_bash() -> Option<PathBuf> {
+    for path in [
+        PathBuf::from(r"C:\\Program Files\\Git\\bin\\bash.exe"),
+        PathBuf::from(r"C:\\Program Files\\Git\\usr\\bin\\bash.exe"),
+    ] {
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+    None
+}''',
+        '''fn find_git_bash() -> Option<PathBuf> {
+    [
+        PathBuf::from(r"C:\\Program Files\\Git\\bin\\bash.exe"),
+        PathBuf::from(r"C:\\Program Files\\Git\\usr\\bin\\bash.exe"),
+    ]
+    .into_iter()
+    .find(|path| path.is_file())
 }''',
     ),
     (

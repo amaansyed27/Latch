@@ -35,8 +35,17 @@ engine = Path("crates/latch-engine/src/lib.rs")
 text = engine.read_text()
 replacements = [
     (
-        "    ActionId, McpServerId, ProcessId, SessionId, TerminalId, UiRef, Workspace, WorkspaceError,\n",
-        "    ActionId, McpServerId, ProcessId, SessionId, TerminalId, Workspace, WorkspaceError,\n",
+        """use latch_core::{
+    ActionId, McpServerId, ProcessId, SessionId, TerminalId, UiRef, Workspace, WorkspaceError,
+    WorkspaceId,
+};
+""",
+        """use latch_core::{
+    ActionId, McpServerId, ProcessId, SessionId, TerminalId, Workspace, WorkspaceError, WorkspaceId,
+};
+#[cfg(test)]
+use latch_core::UiRef;
+""",
     ),
     ("        _config: &LocalConfig,\n", "        config: &LocalConfig,\n"),
     ("                    self.workspace(_config, workspace_id)?;\n", "                    self.workspace(config, workspace_id)?;\n"),

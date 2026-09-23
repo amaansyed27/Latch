@@ -39,10 +39,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh api "repos/${{ github.repository }}/git/ref/tags/v0.5.1-beta.1" *> $null
-          if ($LASTEXITCODE -eq 0) { throw 'Tag v0.5.1-beta.1 already exists' }
-          gh release view "v0.5.1-beta.1" --repo "${{ github.repository }}" *> $null
-          if ($LASTEXITCODE -eq 0) { throw 'Release v0.5.1-beta.1 already exists' }
+          gh api "repos/${{ github.repository }}/git/ref/tags/v0.6.0-beta.1" *> $null
+          if ($LASTEXITCODE -eq 0) { throw 'Tag v0.6.0-beta.1 already exists' }
+          gh release view "v0.6.0-beta.1" --repo "${{ github.repository }}" *> $null
+          if ($LASTEXITCODE -eq 0) { throw 'Release v0.6.0-beta.1 already exists' }
           exit 0
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -67,19 +67,22 @@ jobs:
       - name: Test router
         working-directory: router
         run: npm test
-      - name: Verify WiX V0.5.1 metadata
+      - name: Build router
+        working-directory: router
+        run: npm run build
+      - name: Verify WiX V0.6 metadata
         shell: pwsh
         run: |
           [xml]$wix = Get-Content 'installer\Latch.wxs' -Raw
           $package = $wix.SelectSingleNode("//*[local-name()='Package']")
           if (-not $package) { throw 'WiX Package element missing' }
-          if ($package.Version -ne '0.5.1') { throw "Unexpected WiX Version: $($package.Version)" }
+          if ($package.Version -ne '0.6.0') { throw "Unexpected WiX Version: $($package.Version)" }
           if ($package.UpgradeCode -ne '6B9638AD-38B8-4EA2-88EF-76D9961EBC4C') { throw "Unexpected UpgradeCode: $($package.UpgradeCode)" }
       - name: Install WiX
-        run: dotnet tool install --global wix --version 4.0.6 --add-source https://api.nuget.org/v3/index.json
+        run: dotnet tool install --global wix --version 5.0.2 --add-source https://api.nuget.org/v3/index.json
       - name: Build installer
         run: ./scripts/build-windows-installer.ps1
-      - name: Verify packaged applications and versions
+      - name: Verify packaged applications, browser runtime, and versions
         shell: pwsh
         run: |
           $msi = (Resolve-Path 'artifacts\LatchSetup-x64.msi').Path
@@ -90,7 +93,7 @@ jobs:
           $record = $view.Fetch()
           if (-not $record) { throw 'MSI ProductVersion is missing' }
           $productVersion = $record.StringData(1)
-          if ($productVersion -ne '0.5.1') { throw "Unexpected MSI ProductVersion: $productVersion" }
+          if ($productVersion -ne '0.6.0') { throw "Unexpected MSI ProductVersion: $productVersion" }
           $view.Close()
 
           $extract = Join-Path $env:RUNNER_TEMP 'latch-msi'
@@ -98,10 +101,18 @@ jobs:
           if ($process.ExitCode) { throw "MSI extraction failed with $($process.ExitCode)" }
           $cli = Get-ChildItem $extract -Filter latch.exe -Recurse | Select-Object -First 1
           $desktop = Get-ChildItem $extract -Filter LatchDesktop.exe -Recurse | Select-Object -First 1
+          $node = Get-ChildItem $extract -Filter node.exe -Recurse | Select-Object -First 1
+          $bridge = Get-ChildItem $extract -Filter bridge.mjs -Recurse | Select-Object -First 1
+          $playwright = Get-ChildItem $extract -Filter package.json -Recurse | Where-Object { $_.FullName -match 'node_modules[\\/]playwright[\\/]package.json$' } | Select-Object -First 1
+          $chromium = Get-ChildItem $extract -Filter chrome.exe -Recurse | Where-Object { $_.FullName -match 'playwright-core.*local-browsers' } | Select-Object -First 1
           if (-not $cli) { throw 'latch.exe is missing from MSI' }
           if (-not $desktop) { throw 'LatchDesktop.exe is missing from MSI' }
+          if (-not $node) { throw 'Bundled node.exe is missing from MSI' }
+          if (-not $bridge) { throw 'Browser bridge is missing from MSI' }
+          if (-not $playwright) { throw 'Pinned Playwright package is missing from MSI' }
+          if (-not $chromium) { throw 'Pinned Chromium payload is missing from MSI' }
           $version = & $cli.FullName --version
-          if ($version -ne 'latch 0.5.1-beta.1') { throw "Unexpected version: $version" }
+          if ($version -ne 'latch 0.6.0-beta.1') { throw "Unexpected version: $version" }
       - name: Verify release checksums
         shell: pwsh
         run: |
@@ -123,13 +134,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "v0.5.1-beta.1" artifacts/LatchSetup-x64.msi artifacts/latch-windows-x64.zip artifacts/SHA256SUMS.txt --repo "${{ github.repository }}" --target "$env:RELEASE_SHA" --prerelease --generate-notes --title "Latch v0.5.1-beta.1"
+          gh release create "v0.6.0-beta.1" artifacts/LatchSetup-x64.msi artifacts/latch-windows-x64.zip artifacts/SHA256SUMS.txt --repo "${{ github.repository }}" --target "$env:RELEASE_SHA" --prerelease --generate-notes --title "Latch v0.6.0-beta.1"
       - name: Verify published tag and assets
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $ref = gh api "repos/${{ github.repository }}/git/ref/tags/v0.5.1-beta.1" | ConvertFrom-Json
+          $ref = gh api "repos/${{ github.repository }}/git/ref/tags/v0.6.0-beta.1" | ConvertFrom-Json
           $tagSha = $ref.object.sha
           if ($ref.object.type -eq 'tag') {
             $tag = gh api "repos/${{ github.repository }}/git/tags/$tagSha" | ConvertFrom-Json
@@ -138,8 +149,8 @@ jobs:
           if ($tagSha -ne $env:RELEASE_SHA) {
             throw "Release tag targets $tagSha instead of $env:RELEASE_SHA"
           }
-          $release = gh release view "v0.5.1-beta.1" --repo "${{ github.repository }}" --json tagName,isPrerelease,assets,url | ConvertFrom-Json
-          if ($release.tagName -ne 'v0.5.1-beta.1') { throw 'Unexpected release tag name' }
+          $release = gh release view "v0.6.0-beta.1" --repo "${{ github.repository }}" --json tagName,isPrerelease,assets,url | ConvertFrom-Json
+          if ($release.tagName -ne 'v0.6.0-beta.1') { throw 'Unexpected release tag name' }
           if (-not $release.isPrerelease) { throw 'Release is not marked prerelease' }
           $assetNames = @($release.assets | ForEach-Object { $_.name })
           foreach ($name in @('LatchSetup-x64.msi', 'latch-windows-x64.zip', 'SHA256SUMS.txt')) {

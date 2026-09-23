@@ -558,21 +558,19 @@ async fn ensure_connection<'a>(
             .refs
             .retain(|_, key| key.server_id != server.server_id);
     }
-    let connection_missing = state.connections.get(&server.server_id).is_none();
-    if connection_missing {
+    if let std::collections::hash_map::Entry::Vacant(entry) =
+        state.connections.entry(server.server_id)
+    {
         let service = connect(server).await?;
         let tools = fetch_catalogue(&service).await?;
         let catalogue_hash = catalogue_hash(&tools);
-        state.connections.insert(
-            server.server_id,
-            Connection {
-                fingerprint,
-                service,
-                tools,
-                catalogue_version: 1,
-                catalogue_hash,
-            },
-        );
+        entry.insert(Connection {
+            fingerprint,
+            service,
+            tools,
+            catalogue_version: 1,
+            catalogue_hash,
+        });
     }
     state
         .connections

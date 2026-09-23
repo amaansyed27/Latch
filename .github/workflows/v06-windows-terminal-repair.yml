@@ -1,0 +1,103 @@
+name: V0.6 Windows terminal repair
+
+on:
+  push:
+    branches:
+      - feat/v0.6-windows-agent-runtime
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Make PTY test wait for observable output
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+
+          path = Path("crates/latch-terminal/src/lib.rs")
+          text = path.read_text(encoding="utf-8")
+          old_import = "    use std::{thread, time::Duration};"
+          new_import = "    use std::{thread, time::{Duration, Instant}};"
+          if old_import not in text:
+              raise SystemExit("terminal test import marker not found")
+          text = text.replace(old_import, new_import, 1)
+
+          old_test = '''        manager
+            .write(created.terminal_id, "echo LATCH_PTY_TEST\\r\\n")
+            .unwrap();
+        thread::sleep(Duration::from_millis(350));
+        let first = manager
+            .snapshot(created.terminal_id, None, Some(32 * 1024))
+            .unwrap();
+        assert!(first.logical_screen.contains("LATCH_PTY_TEST"));
+        manager
+            .write(created.terminal_id, "echo SECOND\\r\\n")
+            .unwrap();
+        thread::sleep(Duration::from_millis(250));
+        let second = manager
+            .snapshot(created.terminal_id, Some(first.sequence), Some(32 * 1024))
+            .unwrap();
+        assert!(second.output.contains("SECOND"));
+'''
+          new_test = '''        manager
+            .write(created.terminal_id, "echo LATCH_PTY_TEST\\r\\n")
+            .unwrap();
+        let first_deadline = Instant::now() + Duration::from_secs(5);
+        let first = loop {
+            let snapshot = manager
+                .snapshot(created.terminal_id, None, Some(32 * 1024))
+                .unwrap();
+            if snapshot.logical_screen.contains("LATCH_PTY_TEST") {
+                break snapshot;
+            }
+            assert!(
+                Instant::now() < first_deadline,
+                "timed out waiting for first terminal output: {:?}",
+                snapshot.logical_screen
+            );
+            thread::sleep(Duration::from_millis(50));
+        };
+        manager
+            .write(created.terminal_id, "echo SECOND\\r\\n")
+            .unwrap();
+        let second_deadline = Instant::now() + Duration::from_secs(5);
+        let second = loop {
+            let snapshot = manager
+                .snapshot(created.terminal_id, Some(first.sequence), Some(32 * 1024))
+                .unwrap();
+            if snapshot.output.contains("SECOND") {
+                break snapshot;
+            }
+            assert!(
+                Instant::now() < second_deadline,
+                "timed out waiting for incremental terminal output: {:?}",
+                snapshot.output
+            );
+            thread::sleep(Duration::from_millis(50));
+        };
+        assert!(second.output.contains("SECOND"));
+'''
+          if old_test not in text:
+              raise SystemExit("terminal test body marker not found")
+          path.write_text(text.replace(old_test, new_test, 1), encoding="utf-8")
+          '@ | python -
+      - run: cargo fmt --all
+      - run: cargo test --locked -p latch-terminal
+      - name: Commit repair and remove one-shot workflow
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/v06-windows-terminal-repair.yml
+          git add crates/latch-terminal/src/lib.rs
+          git commit -m "test: make terminal output checks timing-safe"
+          git push origin HEAD:feat/v0.6-windows-agent-runtime

@@ -26,6 +26,9 @@
           <Component Id="LatchDesktopFiles" Guid="*">
             <File Id="LatchDesktopExe" Source="$(SourceDir)\LatchDesktop.exe" Name="LatchDesktop.exe" KeyPath="yes" />
           </Component>
+          <Component Id="BrowserNodeFiles" Guid="*">
+            <File Id="BrowserNodeExe" Source="$(NodeExePath)" Name="node.exe" KeyPath="yes" />
+          </Component>
         </Directory>
       </Directory>
     </StandardDirectory>
@@ -50,6 +53,7 @@
     <Feature Id="MainFeature" Title="Latch" Level="1">
       <ComponentRef Id="LatchCliFiles" />
       <ComponentRef Id="LatchDesktopFiles" />
+      <ComponentRef Id="BrowserNodeFiles" />
       <ComponentRef Id="StartMenuEntry" />
       <ComponentRef Id="StartupEntry" />
       <Files Directory="INSTALLFOLDER" Include="$(BrowserRuntimeDir)\**" Subdirectory="browser-runtime" />

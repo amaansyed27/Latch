@@ -24,10 +24,8 @@ replacements = [
         "        let reader_task = spawn_reader(reader, Arc::clone(&output), Arc::downgrade(&writer));",
     ),
     (
-        "    writer: Option<Box<dyn Write + Send>>,
-",
-        "    writer: Option<Arc<Mutex<Box<dyn Write + Send>>>>,
-",
+        "    writer: Option<Box<dyn Write + Send>>,%NL%".replace("%NL%", "\n"),
+        "    writer: Option<Arc<Mutex<Box<dyn Write + Send>>>>,%NL%".replace("%NL%", "\n"),
     ),
     (
         '''        let writer = terminal

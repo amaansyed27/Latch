@@ -165,16 +165,16 @@ impl TerminalManager {
         let pid = child.process_id();
         let terminal = ManagedTerminal {
             profile: profile.clone(),
-            master: pair.master,
+            master: Some(pair.master),
             child,
-            writer,
+            writer: Some(writer),
             output,
             reader_task: Some(reader_task),
             killed: false,
             rows,
             cols,
             #[cfg(windows)]
-            _job: job,
+            _job: Some(job),
         };
         lock(&self.terminals).insert(terminal_id, Arc::new(Mutex::new(terminal)));
         info!(%terminal_id, ?pid, profile = %profile.id, "persistent terminal created");
@@ -194,8 +194,12 @@ impl TerminalManager {
         let handle = self.terminal(terminal_id)?;
         let mut terminal = lock(&handle);
         terminal.ensure_running(terminal_id)?;
-        terminal.writer.write_all(text.as_bytes())?;
-        terminal.writer.flush()?;
+        let writer = terminal
+            .writer
+            .as_mut()
+            .ok_or(TerminalError::NotRunning(terminal_id))?;
+        writer.write_all(text.as_bytes())?;
+        writer.flush()?;
         Ok(())
     }
 
@@ -214,6 +218,8 @@ impl TerminalManager {
         terminal.ensure_running(terminal_id)?;
         terminal
             .master
+            .as_ref()
+            .ok_or(TerminalError::NotRunning(terminal_id))?
             .resize(PtySize {
                 rows: rows.clamp(2, 300),
                 cols: cols.clamp(10, 500),
@@ -316,16 +322,16 @@ impl Drop for TerminalManager {
 
 struct ManagedTerminal {
     profile: ShellProfile,
-    master: Box<dyn MasterPty + Send>,
+    master: Option<Box<dyn MasterPty + Send>>,
     child: Box<dyn portable_pty::Child + Send + Sync>,
-    writer: Box<dyn Write + Send>,
+    writer: Option<Box<dyn Write + Send>>,
     output: Arc<Mutex<OutputRing>>,
     reader_task: Option<JoinHandle<()>>,
     killed: bool,
     rows: u16,
     cols: u16,
     #[cfg(windows)]
-    _job: win32job::Job,
+    _job: Option<win32job::Job>,
 }
 
 impl ManagedTerminal {
@@ -352,8 +358,13 @@ impl ManagedTerminal {
     fn kill(&mut self) -> Result<(), TerminalError> {
         if matches!(self.state()?, TerminalState::Running) {
             self.child.kill()?;
+            #[cfg(windows)]
+            self._job.take();
+            let _ = self.child.wait()?;
         }
         self.killed = true;
+        self.writer.take();
+        self.master.take();
         if let Some(reader) = self.reader_task.take() {
             let _ = reader.join();
         }

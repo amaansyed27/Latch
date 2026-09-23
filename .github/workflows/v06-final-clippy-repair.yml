@@ -1,0 +1,30 @@
+name: V0.6 final clippy repair
+
+on:
+  push:
+    branches:
+      - feat/v0.6-windows-agent-runtime
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: python scripts/repair-v06-clippy.py
+      - run: cargo fmt --all
+      - run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+      - name: Commit repair and remove one-shot files
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/v06-final-clippy-repair.yml scripts/repair-v06-clippy.py
+          git add crates/latch-mcp-client/src/lib.rs crates/latch-engine/src/lib.rs crates/latch-engine/src/session.rs crates/latch-engine/src/events.rs
+          git commit -m "fix: satisfy v0.6 workspace clippy policy"
+          git push origin HEAD:feat/v0.6-windows-agent-runtime

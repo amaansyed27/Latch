@@ -124,5 +124,16 @@ for signature in [
     if text.count(signature) != 1:
         raise SystemExit(f"expected dispatcher signature not found exactly once: {signature!r}")
     text = text.replace(signature, "    #[allow(clippy::too_many_lines)]\n" + signature, 1)
-
 engine.write_text(text)
+
+# Remote test does not mutate Engine; keep the fixture aligned with the public signature.
+remote = Path("crates/latch-link/tests/remote.rs")
+text = remote.read_text()
+for old, new in [
+    ("    let mut engine = Engine::with_store(store);\n", "    let engine = Engine::with_store(store);\n"),
+    ("        &mut engine,\n", "        &engine,\n"),
+]:
+    if text.count(old) != 1:
+        raise SystemExit(f"expected remote-test fragment not found exactly once: {old!r}")
+    text = text.replace(old, new, 1)
+remote.write_text(text)

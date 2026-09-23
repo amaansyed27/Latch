@@ -37,7 +37,7 @@ function renderStatus(status) {
   $("connection-copy").textContent = status.paused
     ? "Remote requests are blocked locally. The device remains paired."
     : status.state === "connected"
-      ? "Ready for requests allowed by your local permissions."
+      ? "Ready for requests allowed by your local permission policy."
       : ["reconnecting", "connecting", "starting"].includes(status.state)
         ? "Latch is reconnecting automatically."
         : status.state === "error"
@@ -146,8 +146,47 @@ function renderMcps(config) {
 }
 
 function renderPermissions(config) {
-  for (const input of document.querySelectorAll("[data-permission]")) {
-    input.checked = Boolean(config.permissions[input.dataset.permission]);
+  const policy = config.capability_policy || {};
+  for (const select of document.querySelectorAll("[data-capability]")) {
+    select.value = policy[select.dataset.capability] || "deny";
+  }
+}
+
+function humanCapability(value) {
+  return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function renderApprovals(approvals) {
+  const list = $("approvals-list");
+  list.replaceChildren();
+  $("approvals-empty").hidden = approvals.length > 0;
+  for (const approval of approvals) {
+    const row = document.createElement("div");
+    row.className = "list-row approval-row";
+    const copy = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = approval.summary;
+    const detail = document.createElement("small");
+    const session = approval.session_id ? ` · Session ${approval.session_id.slice(0, 8)}…` : "";
+    detail.textContent = `${humanCapability(approval.capability)}${session}`;
+    copy.append(title, detail);
+    const actions = document.createElement("div");
+    actions.className = "row-actions approval-actions";
+    actions.append(
+      makeButton("Deny", "text-button danger", () => decideApproval(approval.approval_id, "deny")),
+      makeButton("Allow once", "text-button", () => decideApproval(approval.approval_id, "allow_once")),
+      makeButton("Allow for session", "button primary compact", () => decideApproval(approval.approval_id, "allow_session")),
+    );
+    row.append(copy, actions);
+    list.append(row);
+  }
+}
+
+async function decideApproval(approvalId, decision) {
+  try {
+    renderLocal(await invoke("resolve_approval", { approvalId, decision }));
+  } catch (error) {
+    alert(String(error));
   }
 }
 
@@ -176,6 +215,7 @@ function renderLocal(snapshot) {
   renderRoots(snapshot.config);
   renderMcps(snapshot.config);
   renderPermissions(snapshot.config);
+  renderApprovals(snapshot.approvals || []);
   renderActivity(snapshot.activity);
   if (currentStatus) {
     currentStatus.paused = snapshot.config.paused;
@@ -290,15 +330,26 @@ $("add-folder").addEventListener("click", async () => {
   renderLocal(await invoke("add_folder"));
 });
 
-for (const input of document.querySelectorAll("[data-permission]")) {
-  input.addEventListener("change", async () => {
+for (const select of document.querySelectorAll("[data-capability]")) {
+  select.addEventListener("change", async () => {
+    const previous = localSnapshot?.config?.capability_policy?.[select.dataset.capability] || "deny";
     try {
-      renderLocal(await invoke("set_permission", {
-        permission: input.dataset.permission,
-        enabled: input.checked,
+      renderLocal(await invoke("set_capability_permission", {
+        capability: select.dataset.capability,
+        mode: select.value,
       }));
     } catch (error) {
-      input.checked = !input.checked;
+      select.value = previous;
+      alert(String(error));
+    }
+  });
+}
+
+for (const button of document.querySelectorAll("[data-preset]")) {
+  button.addEventListener("click", async () => {
+    try {
+      renderLocal(await invoke("set_permission_preset", { preset: button.dataset.preset }));
+    } catch (error) {
       alert(String(error));
     }
   });
@@ -352,6 +403,11 @@ $("run-diagnostics").addEventListener("click", async () => {
 
 refresh();
 setInterval(async () => {
-  try { renderStatus(await invoke("status")); }
-  catch { /* keep the last known state visible */ }
-}, 5000);
+  try {
+    const status = await invoke("status");
+    renderStatus(status);
+    if (status.paired) renderLocal(await invoke("local_state"));
+  } catch {
+    // Keep the last known state visible.
+  }
+}, 3000);

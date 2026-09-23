@@ -278,7 +278,6 @@ struct Connection {
     tools: Vec<RemoteTool>,
     catalogue_version: u64,
     catalogue_hash: String,
-    display_name: String,
 }
 
 #[derive(Clone)]

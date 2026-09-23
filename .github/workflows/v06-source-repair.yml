@@ -29,23 +29,9 @@ jobs:
           platform = Path('crates/latch-windows/src/platform.rs')
           text = platform.read_text()
           text = text.replace('use tracing::warn;\n', '', 1)
-          old = '''    fn element(&mut self, session_id: SessionId, element_ref: UiRef) -> Result<&UIElement, WindowsError> {
-              let Some(record) = self.refs.get(&element_ref) else {
-                  return Err(WindowsError::StaleRef);
-              };
-              if record.session_id != session_id {
-                  return Err(WindowsError::RefSessionMismatch);
-              }
-              match record.element.get_runtime_id() {
-                  Ok(runtime_id) if runtime_id == record.runtime_id => Ok(&record.element),
-                  _ => {
-                      self.refs.remove(&element_ref);
-                      Err(WindowsError::StaleRef)
-                  }
-              }
-          }
-          '''
-          new = '''    fn element(&mut self, session_id: SessionId, element_ref: UiRef) -> Result<&UIElement, WindowsError> {
+          start = text.index('    fn element(')
+          end = text.index('\n    fn ', start + 1)
+          replacement = '''    fn element(&mut self, session_id: SessionId, element_ref: UiRef) -> Result<&UIElement, WindowsError> {
               let is_stale = {
                   let Some(record) = self.refs.get(&element_ref) else {
                       return Err(WindowsError::StaleRef);
@@ -67,11 +53,8 @@ jobs:
                   .get(&element_ref)
                   .expect("validated UI ref must still exist")
                   .element)
-          }
-          '''
-          if old not in text:
-              raise SystemExit('expected UIA stale-ref function not found')
-          platform.write_text(text.replace(old, new, 1))
+          }'''
+          platform.write_text(text[:start] + replacement + text[end:])
 
           auth = Path('router/test/public-auth.test.ts')
           text = auth.read_text()

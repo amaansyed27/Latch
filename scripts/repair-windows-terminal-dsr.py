@@ -110,6 +110,63 @@ replacements = [
     })
 }''',
     ),
+    (
+        "    use std::{thread, time::Duration};",
+        "    use std::{thread, time::{Duration, Instant}};",
+    ),
+    (
+        '''        manager
+            .write(created.terminal_id, "echo LATCH_PTY_TEST\\r\\n")
+            .unwrap();
+        thread::sleep(Duration::from_millis(350));
+        let first = manager
+            .snapshot(created.terminal_id, None, Some(32 * 1024))
+            .unwrap();
+        assert!(first.logical_screen.contains("LATCH_PTY_TEST"));
+        manager
+            .write(created.terminal_id, "echo SECOND\\r\\n")
+            .unwrap();
+        thread::sleep(Duration::from_millis(250));
+        let second = manager
+            .snapshot(created.terminal_id, Some(first.sequence), Some(32 * 1024))
+            .unwrap();
+        assert!(second.output.contains("SECOND"));''',
+        '''        manager
+            .write(created.terminal_id, "echo LATCH_PTY_TEST\\r\\n")
+            .unwrap();
+        let first_deadline = Instant::now() + Duration::from_secs(5);
+        let first = loop {
+            let snapshot = manager
+                .snapshot(created.terminal_id, None, Some(32 * 1024))
+                .unwrap();
+            if snapshot.logical_screen.contains("LATCH_PTY_TEST") {
+                break snapshot;
+            }
+            assert!(
+                Instant::now() < first_deadline,
+                "timed out waiting for first terminal output: {snapshot:?}"
+            );
+            thread::sleep(Duration::from_millis(50));
+        };
+        manager
+            .write(created.terminal_id, "echo SECOND\\r\\n")
+            .unwrap();
+        let second_deadline = Instant::now() + Duration::from_secs(5);
+        let second = loop {
+            let snapshot = manager
+                .snapshot(created.terminal_id, Some(first.sequence), Some(32 * 1024))
+                .unwrap();
+            if snapshot.output.contains("SECOND") {
+                break snapshot;
+            }
+            assert!(
+                Instant::now() < second_deadline,
+                "timed out waiting for incremental terminal output: {snapshot:?}"
+            );
+            thread::sleep(Duration::from_millis(50));
+        };
+        assert!(second.output.contains("SECOND"));''',
+    ),
 ]
 
 for old, new in replacements:

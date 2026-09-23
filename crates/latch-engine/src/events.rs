@@ -77,7 +77,7 @@ impl EventBus {
             {
                 last.sequence = event.sequence;
                 last.timestamp_ms = event.timestamp_ms;
-                last.payload = event.payload.clone();
+                last.payload.clone_from(&event.payload);
                 let coalesced = last.clone();
                 drop(state);
                 self.changed.notify_all();

@@ -827,7 +827,7 @@ mod tests {
             .iter()
             .filter_map(|tool| relevance(tool, "benchmark").map(|score| (score, tool)))
             .collect::<Vec<_>>();
-        matches.sort_by(|left, right| right.0.cmp(&left.0));
+        matches.sort_by_key(|left| std::cmp::Reverse(left.0));
         let concise = matches
             .into_iter()
             .take(MAX_SEARCH_RESULTS)

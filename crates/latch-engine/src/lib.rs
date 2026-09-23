@@ -16,9 +16,10 @@ use latch_browser::{
     BrowserAction, BrowserError, BrowserManager, BrowserProfile, BrowserTarget, BrowserVerification,
 };
 use latch_computer::{ComputerError, ComputerManager, MouseButton, ScreenshotFormat, ScrollAxis};
+#[cfg(test)]
+use latch_core::UiRef;
 use latch_core::{
-    ActionId, McpServerId, ProcessId, SessionId, TerminalId, UiRef, Workspace, WorkspaceError,
-    WorkspaceId,
+    ActionId, McpServerId, ProcessId, SessionId, TerminalId, Workspace, WorkspaceError, WorkspaceId,
 };
 use latch_exec::{
     run_blocking, CommandSpec, ExecError, ManagedStreamOutput, ProcessManager, ProcessState,
@@ -211,7 +212,7 @@ impl Engine {
 
     fn agent_session(
         &self,
-        _config: &LocalConfig,
+        config: &LocalConfig,
         request: SessionRequest,
     ) -> Result<Value, ProtocolError> {
         match request {
@@ -247,7 +248,7 @@ impl Engine {
                         .map_err(map_session_error)?;
                 }
                 for workspace_id in workspace_ids {
-                    self.workspace(_config, workspace_id)?;
+                    self.workspace(config, workspace_id)?;
                     self.sessions
                         .bind_workspace(session_id, workspace_id)
                         .map_err(map_session_error)?;
@@ -295,6 +296,7 @@ impl Engine {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn agent_inspect(
         &self,
         config: &LocalConfig,
@@ -449,6 +451,7 @@ impl Engine {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn agent_files(
         &self,
         config: &LocalConfig,
@@ -735,6 +738,7 @@ impl Engine {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn agent_exec(
         &self,
         config: &LocalConfig,
@@ -1056,6 +1060,7 @@ impl Engine {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn agent_act(&self, config: &LocalConfig, request: ActRequest) -> Result<Value, ProtocolError> {
         match request {
             ActRequest::AppLaunch {
@@ -1124,8 +1129,7 @@ impl Engine {
                     Some(
                         self.windows_provider()?
                             .active_window(session_id)
-                            .map(|window| window.process_id == pid)
-                            .unwrap_or(false),
+                            .is_ok_and(|window| window.process_id == pid),
                     )
                 };
                 self.verified_value(
@@ -1347,6 +1351,7 @@ impl Engine {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     fn agent_browser(
         &self,
         config: &LocalConfig,
@@ -1974,11 +1979,12 @@ impl Engine {
         result: Value,
     ) -> Result<Value, ProtocolError> {
         let outcome = match (verification_mode, verified) {
-            (VerificationMode::None, _) => ActionOutcome::AppliedUnverified,
+            (VerificationMode::None, _) | (VerificationMode::Auto, None) => {
+                ActionOutcome::AppliedUnverified
+            }
             (_, Some(true)) => ActionOutcome::Verified,
-            (VerificationMode::Required, Some(false) | None) => ActionOutcome::VerificationFailed,
-            (VerificationMode::Auto, Some(false)) => ActionOutcome::VerificationFailed,
-            (VerificationMode::Auto, None) => ActionOutcome::AppliedUnverified,
+            (VerificationMode::Required, Some(false) | None)
+            | (VerificationMode::Auto, Some(false)) => ActionOutcome::VerificationFailed,
         };
         let revision = self
             .revision
@@ -2976,10 +2982,11 @@ fn map_exec_error(error: ExecError) -> ProtocolError {
 
 fn map_computer_error(error: ComputerError) -> ProtocolError {
     let code = match error {
-        ComputerError::UnsupportedPlatform => ErrorCode::ComputerUnavailable,
+        ComputerError::UnsupportedPlatform | ComputerError::Operation(_) => {
+            ErrorCode::ComputerUnavailable
+        }
         ComputerError::WindowNotFound | ComputerError::InvalidInput(_) => ErrorCode::InvalidRequest,
         ComputerError::ScreenshotTooLarge => ErrorCode::PayloadTooLarge,
-        ComputerError::Operation(_) => ErrorCode::ComputerUnavailable,
     };
     protocol_error(code, error.to_string())
 }
@@ -3027,8 +3034,8 @@ fn map_mcp_error(error: McpClientError) -> ProtocolError {
         McpClientError::ServerDisabled => ErrorCode::McpServerDisabled,
         McpClientError::ToolNotFound(_) => ErrorCode::McpToolNotFound,
         McpClientError::ToolRefNotFound => ErrorCode::McpToolRefNotFound,
-        McpClientError::Protocol(_) => ErrorCode::McpUnavailable,
-        McpClientError::Connect(_)
+        McpClientError::Protocol(_)
+        | McpClientError::Connect(_)
         | McpClientError::MissingEnvironmentReference(_)
         | McpClientError::Runtime(_)
         | McpClientError::ManagerStopped => ErrorCode::McpUnavailable,

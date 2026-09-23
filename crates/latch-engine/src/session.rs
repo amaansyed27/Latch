@@ -243,11 +243,6 @@ impl SessionManager {
         Ok(result)
     }
 
-    pub fn remove(&self, session_id: SessionId) -> Result<(), String> {
-        lock(&self.sessions).remove(&session_id);
-        self.persist()
-    }
-
     fn bind(
         &self,
         session_id: SessionId,

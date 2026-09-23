@@ -11,7 +11,7 @@ fn remote_request_executes_through_shared_engine_and_preserves_correlation() {
     let temp = tempfile::tempdir().unwrap();
     let store = LocalStore::new(temp.path().join("state"));
     let root = store.add_root(temp.path()).unwrap();
-    let mut engine = Engine::with_store(store);
+    let engine = Engine::with_store(store);
 
     let open = engine.handle_envelope(RequestEnvelope {
         id: "open".to_owned(),
@@ -40,7 +40,7 @@ fn remote_request_executes_through_shared_engine_and_preserves_correlation() {
     );
 
     let message = execute_remote(
-        &mut engine,
+        &engine,
         "remote-correlation-1".to_owned(),
         RequestEnvelope {
             id: "exec".to_owned(),

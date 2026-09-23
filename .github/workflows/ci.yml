@@ -129,6 +129,8 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      - name: Test deterministic V0.6 developer-loop fixture
+        run: node ../fixtures/v0.6-developer-loop/test.mjs
       - run: npx playwright install --with-deps chromium
       - run: npm run test:web
 

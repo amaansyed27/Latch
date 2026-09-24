@@ -6,7 +6,10 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use latch_core::{BrowserContextId, ProcessId, SessionId, TabId, TerminalId, WorkspaceId};
+use latch_core::{
+    runtime_events::{self, ResourceKey},
+    BrowserContextId, ProcessId, SessionId, TabId, TerminalId, WorkspaceId,
+};
 use serde::{Deserialize, Serialize};
 
 const SESSION_FILE: &str = "sessions.json";
@@ -177,13 +180,17 @@ impl SessionManager {
     ) -> Result<(), String> {
         self.bind(session_id, |session| {
             session.terminal_ids.insert(terminal_id);
-        })
+        })?;
+        runtime_events::bind_resource(ResourceKey::Terminal(terminal_id), session_id);
+        Ok(())
     }
 
     pub fn bind_process(&self, session_id: SessionId, process_id: ProcessId) -> Result<(), String> {
         self.bind(session_id, |session| {
             session.process_ids.insert(process_id);
-        })
+        })?;
+        runtime_events::bind_resource(ResourceKey::Process(process_id), session_id);
+        Ok(())
     }
 
     pub fn bind_context(
@@ -193,13 +200,17 @@ impl SessionManager {
     ) -> Result<(), String> {
         self.bind(session_id, |session| {
             session.browser_context_ids.insert(context_id);
-        })
+        })?;
+        runtime_events::bind_resource(ResourceKey::BrowserContext(context_id), session_id);
+        Ok(())
     }
 
     pub fn bind_tab(&self, session_id: SessionId, tab_id: TabId) -> Result<(), String> {
         self.bind(session_id, |session| {
             session.tab_ids.insert(tab_id);
-        })
+        })?;
+        runtime_events::bind_resource(ResourceKey::Tab(tab_id), session_id);
+        Ok(())
     }
 
     pub fn owns_workspace(&self, session_id: SessionId, workspace_id: WorkspaceId) -> bool {
@@ -240,6 +251,7 @@ impl SessionManager {
         let result = snapshot(record);
         drop(sessions);
         self.persist()?;
+        runtime_events::clear_session(session_id);
         Ok(result)
     }
 
@@ -270,13 +282,20 @@ impl SessionManager {
     fn cleanup(&self) {
         let now = now_ms();
         let mut sessions = lock(&self.sessions);
-        let before = sessions.len();
-        sessions.retain(|_, session| {
-            session.state != SessionState::Closed
-                && now.saturating_sub(session.updated_at_ms) <= SESSION_TTL_MS
-        });
-        let changed = before != sessions.len();
+        let expired = sessions
+            .iter()
+            .filter_map(|(id, session)| {
+                (session.state == SessionState::Closed
+                    || now.saturating_sub(session.updated_at_ms) > SESSION_TTL_MS)
+                    .then_some(*id)
+            })
+            .collect::<Vec<_>>();
+        sessions.retain(|id, _| !expired.contains(id));
+        let changed = !expired.is_empty();
         drop(sessions);
+        for session_id in expired {
+            runtime_events::clear_session(session_id);
+        }
         if changed {
             let _ = self.persist();
         }
@@ -359,13 +378,25 @@ mod tests {
         let manager = SessionManager::new(temp.path());
         let session = manager.create().unwrap();
         let workspace = WorkspaceId::new();
+        let terminal = TerminalId::new();
         manager
             .bind_workspace(session.session_id, workspace)
             .unwrap();
+        manager.bind_terminal(session.session_id, terminal).unwrap();
         assert!(manager.owns_workspace(session.session_id, workspace));
+        assert!(manager.owns_terminal(session.session_id, terminal));
+        runtime_events::publish_resource(
+            ResourceKey::Terminal(terminal),
+            "terminal",
+            "terminal.output",
+            "ready",
+            None,
+        );
+        assert!(!runtime_events::read(session.session_id, 0, &[], 0, 10).is_empty());
         let closed = manager.close(session.session_id).unwrap();
         assert_eq!(closed.state, SessionState::Closed);
         assert!(!manager.owns_workspace(session.session_id, workspace));
+        assert!(runtime_events::read(session.session_id, 0, &[], 0, 10).is_empty());
     }
 
     #[test]

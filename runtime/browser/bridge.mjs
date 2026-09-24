@@ -20,6 +20,14 @@ function pushEvent(record, bucket, kind, text) {
   if (record[bucket].length > MAX_EVENTS) record[bucket].splice(0, record[bucket].length - MAX_EVENTS);
 }
 
+function eventsSince(record, afterSequence) {
+  return {
+    console: record.console.filter((entry) => entry.sequence > afterSequence),
+    network: record.network.filter((entry) => entry.sequence > afterSequence),
+    downloads: record.downloads.filter((entry) => entry.sequence > afterSequence),
+  };
+}
+
 function attachPage(tabId, page) {
   const record = tabs.get(tabId);
   if (!record) return;
@@ -125,8 +133,9 @@ async function handle(operation, params) {
       const tabId = params.tab_id;
       tabs.set(tabId, { contextId: params.context_id, page, console: [], network: [], downloads: [] });
       attachPage(tabId, page);
+      const before = eventSequence - 1;
       if (params.url) await page.goto(params.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      return tabInfo(tabId);
+      return { ...(await tabInfo(tabId)), events: eventsSince(tabRecord(tabId), before) };
     }
     case 'tab.list': {
       const result = [];
@@ -144,8 +153,9 @@ async function handle(operation, params) {
     }
     case 'navigate': {
       const record = tabRecord(params.tab_id);
+      const before = eventSequence - 1;
       await record.page.goto(params.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      return tabInfo(params.tab_id, record);
+      return { ...(await tabInfo(params.tab_id, record)), events: eventsSince(record, before) };
     }
     case 'snapshot': {
       const record = tabRecord(params.tab_id);
@@ -189,6 +199,7 @@ async function handle(operation, params) {
       const record = tabRecord(params.tab_id);
       const locator = locatorFor(record.page, params.target).first();
       const action = params.action;
+      const before = eventSequence - 1;
       let providerVerification = null;
       switch (action.kind) {
         case 'click': await locator.click({ timeout: 10000 }); break;
@@ -218,6 +229,7 @@ async function handle(operation, params) {
         url: bounded(record.page.url(), 8192),
         title: bounded(await record.page.title(), 1024),
         verification: requestedVerification ?? providerVerification,
+        events: eventsSince(record, before),
       };
     }
     case 'console': {

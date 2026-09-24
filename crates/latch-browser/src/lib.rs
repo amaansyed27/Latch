@@ -6,7 +6,11 @@ use std::{
     sync::{Mutex, MutexGuard, PoisonError},
 };
 
-use latch_core::{BrowserContextId, TabId};
+use latch_core::{
+    resolver::{resolve_route, ProviderRoute, RouteCandidate, RouteIntent},
+    runtime_events::{self, ResourceKey},
+    BrowserContextId, TabId,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use thiserror::Error;
@@ -155,6 +159,7 @@ impl BrowserManager {
     }
 
     pub fn status(&self) -> Result<Value, BrowserError> {
+        ensure_playwright_route()?;
         self.call("status", json!({}))
     }
 
@@ -162,6 +167,7 @@ impl BrowserManager {
         &self,
         profile: BrowserProfile,
     ) -> Result<BrowserContextInfo, BrowserError> {
+        ensure_playwright_route()?;
         let context_id = BrowserContextId::new();
         let profile_dir = match profile {
             BrowserProfile::Isolated => None,
@@ -180,6 +186,13 @@ impl BrowserManager {
                 "profile_dir": profile_dir,
             }),
         )?;
+        runtime_events::publish_resource(
+            ResourceKey::BrowserContext(context_id),
+            "browser",
+            "browser.context_created",
+            "Browser context created",
+            None,
+        );
         Ok(BrowserContextInfo {
             context_id,
             profile,
@@ -187,11 +200,21 @@ impl BrowserManager {
     }
 
     pub fn list_contexts(&self) -> Result<Vec<BrowserContextInfo>, BrowserError> {
+        ensure_playwright_route()?;
         from_value(self.call("context.list", json!({}))?)
     }
 
     pub fn close_context(&self, context_id: BrowserContextId) -> Result<(), BrowserError> {
+        ensure_playwright_route()?;
         self.call("context.close", json!({ "context_id": context_id }))?;
+        runtime_events::publish_resource(
+            ResourceKey::BrowserContext(context_id),
+            "browser",
+            "browser.context_closed",
+            "Browser context closed",
+            None,
+        );
+        runtime_events::unbind_resource(ResourceKey::BrowserContext(context_id));
         Ok(())
     }
 
@@ -200,38 +223,55 @@ impl BrowserManager {
         context_id: BrowserContextId,
         url: Option<&str>,
     ) -> Result<BrowserTabInfo, BrowserError> {
+        ensure_playwright_route()?;
         if let Some(url) = url {
             validate_string(url, MAX_STRING_CHARS, "URL")?;
         }
         let tab_id = TabId::new();
-        from_value(self.call(
+        let value = self.call(
             "tab.create",
             json!({
                 "context_id": context_id,
                 "tab_id": tab_id,
                 "url": url,
             }),
-        )?)
+        )?;
+        publish_embedded_events(tab_id, &value);
+        from_value(value)
     }
 
     pub fn list_tabs(
         &self,
         context_id: Option<BrowserContextId>,
     ) -> Result<Vec<BrowserTabInfo>, BrowserError> {
+        ensure_playwright_route()?;
         from_value(self.call("tab.list", json!({ "context_id": context_id }))?)
     }
 
     pub fn close_tab(&self, tab_id: TabId) -> Result<(), BrowserError> {
+        ensure_playwright_route()?;
         self.call("tab.close", json!({ "tab_id": tab_id }))?;
+        runtime_events::publish_resource(
+            ResourceKey::Tab(tab_id),
+            "browser",
+            "browser.tab_closed",
+            "Browser tab closed",
+            None,
+        );
+        runtime_events::unbind_resource(ResourceKey::Tab(tab_id));
         Ok(())
     }
 
     pub fn navigate(&self, tab_id: TabId, url: &str) -> Result<BrowserTabInfo, BrowserError> {
+        ensure_playwright_route()?;
         validate_string(url, MAX_STRING_CHARS, "URL")?;
-        from_value(self.call("navigate", json!({ "tab_id": tab_id, "url": url }))?)
+        let value = self.call("navigate", json!({ "tab_id": tab_id, "url": url }))?;
+        publish_embedded_events(tab_id, &value);
+        from_value(value)
     }
 
     pub fn snapshot(&self, tab_id: TabId) -> Result<BrowserSnapshot, BrowserError> {
+        ensure_playwright_route()?;
         from_value(self.call("snapshot", json!({ "tab_id": tab_id }))?)
     }
 
@@ -241,6 +281,7 @@ impl BrowserManager {
         target: BrowserTarget,
         max_results: usize,
     ) -> Result<Vec<BrowserElement>, BrowserError> {
+        ensure_playwright_route()?;
         validate_target(&target)?;
         from_value(self.call(
             "find",
@@ -259,11 +300,12 @@ impl BrowserManager {
         action: BrowserAction,
         verification: Option<BrowserVerification>,
     ) -> Result<BrowserActionResult, BrowserError> {
+        ensure_playwright_route()?;
         validate_target(&target)?;
         if let BrowserAction::Fill { value } = &action {
             validate_string(value, MAX_STRING_CHARS, "fill value")?;
         }
-        from_value(self.call(
+        let value = self.call(
             "act",
             json!({
                 "tab_id": tab_id,
@@ -271,7 +313,9 @@ impl BrowserManager {
                 "action": action,
                 "verification": verification,
             }),
-        )?)
+        )?;
+        publish_embedded_events(tab_id, &value);
+        from_value(value)
     }
 
     pub fn console(
@@ -302,10 +346,12 @@ impl BrowserManager {
     }
 
     pub fn screenshot(&self, tab_id: TabId) -> Result<BrowserScreenshot, BrowserError> {
+        ensure_playwright_route()?;
         from_value(self.call("screenshot", json!({ "tab_id": tab_id }))?)
     }
 
     pub fn page_state(&self, tab_id: TabId) -> Result<BrowserTabInfo, BrowserError> {
+        ensure_playwright_route()?;
         from_value(self.call("page.state", json!({ "tab_id": tab_id }))?)
     }
 
@@ -325,6 +371,7 @@ impl BrowserManager {
         after_sequence: u64,
         max_entries: usize,
     ) -> Result<Vec<BrowserLogEntry>, BrowserError> {
+        ensure_playwright_route()?;
         from_value(self.call(
             operation,
             json!({
@@ -450,6 +497,77 @@ struct ProviderResponse {
 
 fn from_value<T: for<'de> Deserialize<'de>>(value: Value) -> Result<T, BrowserError> {
     serde_json::from_value(value).map_err(|error| BrowserError::Protocol(error.to_string()))
+}
+
+fn ensure_playwright_route() -> Result<(), BrowserError> {
+    let resolved = resolve_route(
+        RouteIntent::WebInteraction,
+        &[RouteCandidate::new(
+            ProviderRoute::Playwright,
+            true,
+            true,
+            100,
+            true,
+        )],
+    )
+    .map_err(|error| BrowserError::Unavailable(format!("route resolution failed: {error:?}")))?;
+    if resolved.route != ProviderRoute::Playwright {
+        return Err(BrowserError::Unavailable(
+            "Playwright is not the selected semantic web provider".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn publish_embedded_events(tab_id: TabId, value: &Value) {
+    let Some(events) = value.get("events").and_then(Value::as_object) else {
+        return;
+    };
+    if let Some(entries) = events.get("console").and_then(Value::as_array) {
+        for entry in entries {
+            if serde_json::from_value::<BrowserLogEntry>(entry.clone()).is_ok() {
+                runtime_events::publish_resource(
+                    ResourceKey::Tab(tab_id),
+                    "browser",
+                    "browser.console",
+                    "Browser console activity",
+                    None,
+                );
+            }
+        }
+    }
+    if let Some(entries) = events.get("network").and_then(Value::as_array) {
+        for entry in entries {
+            let Ok(entry) = serde_json::from_value::<BrowserLogEntry>(entry.clone()) else {
+                continue;
+            };
+            let event_type = match entry.kind.as_str() {
+                "navigation" => "browser.navigation",
+                "request_failed" | "response_error" => "browser.request_failed",
+                _ => "browser.network",
+            };
+            runtime_events::publish_resource(
+                ResourceKey::Tab(tab_id),
+                "browser",
+                event_type,
+                &entry.text,
+                None,
+            );
+        }
+    }
+    if let Some(entries) = events.get("downloads").and_then(Value::as_array) {
+        for entry in entries {
+            if let Ok(entry) = serde_json::from_value::<BrowserLogEntry>(entry.clone()) {
+                runtime_events::publish_resource(
+                    ResourceKey::Tab(tab_id),
+                    "browser",
+                    "download.completed",
+                    &entry.text,
+                    None,
+                );
+            }
+        }
+    }
 }
 
 fn validate_string(value: &str, max_chars: usize, label: &str) -> Result<(), BrowserError> {

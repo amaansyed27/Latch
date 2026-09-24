@@ -17,6 +17,8 @@
         </div>
         <nav class="side-nav" id="side-nav" aria-label="Latch sections">
           <button class="active" data-tab="status">Overview</button>
+          <button data-tab="sessions">Sessions</button>
+          <button data-tab="browser">Browser</button>
           <button data-tab="folders">Folders</button>
           <button data-tab="mcps">Local MCPs</button>
           <button data-tab="permissions">Permissions</button>
@@ -70,6 +72,31 @@
             </div>
             <div class="button-row"><button class="button primary" id="restart">Restart connection</button><button class="button" id="logs">Open logs</button></div>
             <div class="notice" id="status-notice">Latch stays in the system tray when this window is closed.</div>
+          </section>
+
+          <section class="tab-panel" data-panel="sessions">
+            <div class="page-section-header"><div><h2>Sessions</h2><p>Normal ChatGPT conversations use explicit device-local Latch sessions rather than depending on MCP transport lifetime.</p></div></div>
+            <div class="status-table">
+              <div><span>Lifecycle</span><strong>Active · Degraded · Closed</strong></div>
+              <div><span>Owned resources</span><strong>Workspaces · terminals · processes · browser tabs</strong></div>
+              <div><span>Restart behavior</span><strong>Recover metadata, mark volatile state degraded</strong></div>
+              <div><span>Cleanup</span><strong>Session close + 12-hour TTL</strong></div>
+            </div>
+            <div class="notice">Session details are intentionally scoped to the ChatGPT task through <code>latch_session</code>. Approval requests below show their session context, and Activity records local metadata without storing terminal, file, browser, or screenshot content.</div>
+          </section>
+
+          <section class="tab-panel" data-panel="browser">
+            <div class="page-section-header"><div><h2>Browser runtime</h2><p>Latch uses a pinned Playwright provider for semantic DOM/accessibility control, console/network inspection, screenshots, downloads, and persistent tabs.</p></div></div>
+            <div class="status-table">
+              <div><span>Provider</span><strong>Playwright 1.63.0</strong></div>
+              <div><span>Default route</span><strong>Semantic browser state before screenshots</strong></div>
+              <div><span>Profiles</span><strong>Isolated + Latch persistent profile</strong></div>
+              <div><span>Existing signed-in browser</span><strong>Deferred · separate permission</strong></div>
+            </div>
+            <div class="permission-list">
+              <label class="permission-row"><span><strong>Isolated browser</strong><small>Latch-controlled testing and persistent-profile contexts</small></span><select data-capability="browser_isolated"><option value="deny">Deny</option><option value="ask">Ask</option><option value="allow">Allow</option></select></label>
+              <label class="permission-row"><span><strong>Authenticated existing browser</strong><small>Reserved for an explicit supported integration; V0.6 does not attach to or copy the default Chrome profile</small></span><select data-capability="browser_authenticated"><option value="deny">Deny</option><option value="ask">Ask</option><option value="allow">Allow</option></select></label>
+            </div>
           </section>
 
           <section class="tab-panel" data-panel="folders">

@@ -81,13 +81,16 @@ function locatorFor(page, target) {
 
 async function verify(page, verification) {
   if (!verification) return null;
-  if (verification.url_contains && !page.url().includes(verification.url_contains)) return false;
+  if (verification.url_contains) {
+    const matched = await page.waitForURL((url) => url.toString().includes(verification.url_contains), { timeout: 5000 }).then(() => true).catch(() => false);
+    if (!matched) return false;
+  }
   if (verification.text_present) {
-    const count = await page.getByText(verification.text_present, { exact: false }).count();
-    if (count < 1) return false;
+    const visible = await page.getByText(verification.text_present, { exact: false }).first().waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false);
+    if (!visible) return false;
   }
   if (verification.selector_visible) {
-    const visible = await page.locator(verification.selector_visible).first().isVisible().catch(() => false);
+    const visible = await page.locator(verification.selector_visible).first().waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false);
     if (!visible) return false;
   }
   return true;

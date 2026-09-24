@@ -320,9 +320,7 @@ impl TerminalManager {
     }
 
     pub fn shutdown_all(&self) {
-        let handles = lock(&self.terminals)
-            .drain()
-            .collect::<Vec<_>>();
+        let handles = lock(&self.terminals).drain().collect::<Vec<_>>();
         for (terminal_id, handle) in handles {
             if let Err(error) = lock(&handle).kill(terminal_id) {
                 warn!(%error, "terminal shutdown failed");
@@ -752,13 +750,8 @@ mod tests {
         manager
             .write(created.terminal_id, "echo LATCH_ASYNC_EVENT\r\n")
             .unwrap();
-        let events = runtime_events::read(
-            session,
-            cursor,
-            &["terminal.output".to_owned()],
-            5_000,
-            10,
-        );
+        let events =
+            runtime_events::read(session, cursor, &["terminal.output".to_owned()], 5_000, 10);
         assert!(!events.is_empty());
         manager.remove(created.terminal_id).unwrap();
         runtime_events::clear_session(session);

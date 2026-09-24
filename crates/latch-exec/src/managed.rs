@@ -2,9 +2,9 @@ use std::{
     collections::HashMap,
     io::{Read, Write},
     process::ExitStatus,
-    sync::{Arc, Mutex, MutexGuard},
+    sync::{Arc, Mutex, MutexGuard, Weak},
     thread::{self, JoinHandle},
-    time::{Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use command_group::GroupChild;
@@ -78,7 +78,9 @@ impl ProcessManager {
             stdout_cursor: 0,
             stderr_cursor: 0,
         };
-        lock(&self.processes).insert(process_id, Arc::new(Mutex::new(process)));
+        let handle = Arc::new(Mutex::new(process));
+        lock(&self.processes).insert(process_id, Arc::clone(&handle));
+        spawn_process_watcher(process_id, Arc::downgrade(&handle));
         info!(%process_id, os_pid, "managed process started");
         Ok(ProcessStart {
             process_id,
@@ -385,6 +387,27 @@ fn spawn_reader(
     process_id: ProcessId,
 ) -> JoinHandle<()> {
     thread::spawn(move || read_stream(stream_name, stream, &buffer, process_id))
+}
+
+fn spawn_process_watcher(process_id: ProcessId, process: Weak<Mutex<ManagedProcess>>) {
+    let _watcher = thread::spawn(move || loop {
+        thread::sleep(Duration::from_millis(100));
+        let Some(handle) = process.upgrade() else {
+            return;
+        };
+        let mut process = lock(&handle);
+        if process.finished.is_some() {
+            return;
+        }
+        match process.refresh(process_id) {
+            Ok(()) if process.finished.is_some() => return,
+            Ok(()) => {}
+            Err(error) => {
+                warn!(%process_id, %error, "managed process exit watcher failed");
+                return;
+            }
+        }
+    });
 }
 
 fn read_stream(

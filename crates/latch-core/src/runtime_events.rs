@@ -74,7 +74,9 @@ pub fn bind_resource(resource: ResourceKey, session_id: SessionId) {
                 event.source,
                 event.event_type,
                 event.summary,
-                event.payload_json.or_else(|| Some(resource_payload(resource))),
+                event
+                    .payload_json
+                    .or_else(|| Some(resource_payload(resource))),
             );
         }
     }
@@ -309,7 +311,9 @@ mod tests {
         );
         bind_resource(ResourceKey::Terminal(terminal), session);
         let events = read(session, 0, &[], 0, 10);
-        assert!(events.iter().any(|event| event.event_type == "terminal.output"));
+        assert!(events
+            .iter()
+            .any(|event| event.event_type == "terminal.output"));
         clear_session(session);
     }
 

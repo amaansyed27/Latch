@@ -144,7 +144,7 @@ jobs:
   remote-e2e:
     name: Router to local engine E2E
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     needs: [quality, router]
     steps:
       - uses: actions/checkout@v4
@@ -153,8 +153,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: cargo build --locked -p latch-link
+      - run: cargo build --locked -p latch-link -p latch-daemon
       - run: npm ci --prefix router
       - run: npm run build --prefix router
+      - name: Install pinned browser runtime for engine E2E
+        run: npm install --prefix runtime/browser --package-lock=false --ignore-scripts --no-audit --no-fund
+      - name: Install pinned Chromium for engine E2E
+        run: node runtime/browser/node_modules/playwright/cli.js install --with-deps chromium
       - run: node router/scripts/e2e-local.mjs
       - run: npm run e2e:mcp --prefix router
+      - name: Run V0.6 daemon developer-loop and MCP scale E2E
+        run: node scripts/e2e-v0.6-engine.mjs

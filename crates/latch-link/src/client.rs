@@ -1,8 +1,4 @@
-use std::{
-    path::Path,
-    sync::{Arc, Mutex, MutexGuard, PoisonError},
-    time::Duration,
-};
+use std::{path::Path, sync::Arc, time::Duration};
 
 use futures_util::{SinkExt, StreamExt};
 use latch_core::DeviceId;
@@ -25,7 +21,7 @@ use crate::{
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 
-type SharedEngine = Arc<Mutex<Engine>>;
+type SharedEngine = Arc<Engine>;
 
 pub struct LinkClient {
     config: LinkConfig,
@@ -58,7 +54,7 @@ impl LinkClient {
         Ok(Self {
             config,
             identity,
-            engine: Arc::new(Mutex::new(Engine::new())),
+            engine: Arc::new(Engine::new()),
             backoff: ReconnectBackoff::default(),
             device_credential,
         })
@@ -82,7 +78,6 @@ impl LinkClient {
                 Err(error) => warn!(error = %error, "Connection lost"),
             }
             status(false);
-
             let delay = self.backoff.next_delay();
             info!(delay_ms = delay.as_millis(), "Reconnecting");
             sleep(delay).await;
@@ -90,7 +85,7 @@ impl LinkClient {
     }
 
     pub fn shutdown(&self) {
-        lock_engine(&self.engine).shutdown();
+        self.engine.shutdown();
     }
 
     pub async fn pair(config: &LinkConfig, code: &str) -> Result<DeviceIdentity, LinkError> {
@@ -184,7 +179,6 @@ impl LinkClient {
 
         let session_result = loop {
             while requests.try_join_next().is_some() {}
-
             let Some(message) = reader.next().await else {
                 break Ok(());
             };
@@ -238,7 +232,7 @@ impl LinkClient {
 }
 
 pub fn execute_remote(
-    engine: &mut Engine,
+    engine: &Engine,
     request_id: String,
     request: RequestEnvelope,
 ) -> ClientMessage {
@@ -258,11 +252,8 @@ fn spawn_remote_request(
     let engine = Arc::clone(engine);
     let sender = sender.clone();
     requests.spawn(async move {
-        let execution = tokio::task::spawn_blocking(move || {
-            let mut engine = lock_engine(&engine);
-            execute_remote(&mut engine, request_id, request)
-        })
-        .await;
+        let execution =
+            tokio::task::spawn_blocking(move || execute_remote(&engine, request_id, request)).await;
 
         match execution {
             Ok(response) => match serde_json::to_string(&response) {
@@ -288,8 +279,4 @@ fn parse_server_message(message: Message) -> Result<ServerMessage, LinkError> {
         Message::Close(_) => Err(LinkError::HandshakeClosed),
         _ => Err(LinkError::InvalidLinkMessage),
     }
-}
-
-fn lock_engine(engine: &Mutex<Engine>) -> MutexGuard<'_, Engine> {
-    engine.lock().unwrap_or_else(PoisonError::into_inner)
 }

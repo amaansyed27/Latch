@@ -1,0 +1,9 @@
+{
+  "name": "latch-browser-runtime",
+  "private": true,
+  "version": "0.6.0-beta.1",
+  "type": "module",
+  "dependencies": {
+    "playwright": "1.63.0"
+  }
+}

@@ -1,5 +1,5 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Package Name="Latch" Manufacturer="Latch" Version="0.5.1" UpgradeCode="6B9638AD-38B8-4EA2-88EF-76D9961EBC4C" Scope="perUser">
+  <Package Name="Latch" Manufacturer="Latch" Version="0.6.0" UpgradeCode="6B9638AD-38B8-4EA2-88EF-76D9961EBC4C" Scope="perUser">
     <SummaryInformation Description="Latch private beta for Windows" />
     <MajorUpgrade DowngradeErrorMessage="A newer version of Latch is already installed." />
     <MediaTemplate EmbedCab="yes" />
@@ -26,6 +26,9 @@
           <Component Id="LatchDesktopFiles" Guid="*">
             <File Id="LatchDesktopExe" Source="$(SourceDir)\LatchDesktop.exe" Name="LatchDesktop.exe" KeyPath="yes" />
           </Component>
+          <Component Id="BrowserNodeFiles" Guid="*">
+            <File Id="BrowserNodeExe" Source="$(NodeExePath)" Name="node.exe" KeyPath="yes" />
+          </Component>
         </Directory>
       </Directory>
     </StandardDirectory>
@@ -50,8 +53,10 @@
     <Feature Id="MainFeature" Title="Latch" Level="1">
       <ComponentRef Id="LatchCliFiles" />
       <ComponentRef Id="LatchDesktopFiles" />
+      <ComponentRef Id="BrowserNodeFiles" />
       <ComponentRef Id="StartMenuEntry" />
       <ComponentRef Id="StartupEntry" />
+      <Files Directory="INSTALLFOLDER" Include="$(BrowserRuntimeDir)\**" Subdirectory="browser-runtime" />
     </Feature>
   </Package>
 </Wix>

@@ -1,0 +1,19 @@
+[package]
+name = "latch-terminal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+latch-core = { path = "../latch-core" }
+portable-pty.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+win32job.workspace = true
+
+[lints]
+workspace = true

@@ -20,13 +20,14 @@ mod windows_app {
         time::Duration,
     };
 
-    use latch_core::{McpServerId, RootId};
+    use latch_core::{ApprovalId, McpServerId, RootId};
     use latch_link::{
         default_device_id_path, load_device_credential, load_or_create_device_id, LinkClient,
         LinkConfig,
     };
     use latch_local::{
-        ActivityEntry, LocalConfig, LocalStore, McpServerConfig, McpTransportConfig,
+        ActivityEntry, ApprovalDecision, ApprovalRequest, Capability, LocalConfig, LocalStore,
+        McpServerConfig, McpTransportConfig, PermissionMode, PermissionPreset,
     };
     use latch_mcp_client::test_connection;
     use rfd::FileDialog;
@@ -68,6 +69,7 @@ mod windows_app {
     struct DesktopLocalState {
         config: LocalConfig,
         activity: Vec<ActivityEntry>,
+        approvals: Vec<ApprovalRequest>,
     }
 
     #[derive(Debug, Deserialize)]
@@ -102,7 +104,9 @@ mod windows_app {
                 local_state,
                 add_folder,
                 remove_folder,
-                set_permission,
+                set_capability_permission,
+                set_permission_preset,
+                resolve_approval,
                 set_paused,
                 save_mcp,
                 remove_mcp,
@@ -171,11 +175,9 @@ mod windows_app {
                 if is_paired() {
                     let _ = run_cli(&["worker-start"]);
                 }
-
                 if !startup || !is_paired() {
                     show_window(app.handle());
                 }
-
                 Ok(())
             })
             .on_window_event(|window, event| {
@@ -282,14 +284,12 @@ mod windows_app {
         let paused = local_store()
             .and_then(|store| store.load().map_err(|error| error.to_string()))
             .is_ok_and(|local| local.paused);
-
         if let Some(status) = file.as_mut() {
             if status.state != "unpaired" && !process_exists(status.pid) {
                 status.state.clear();
                 status.state.push_str("stopped");
             }
         }
-
         let fallback_name = config.as_ref().map_or_else(
             || "This computer".to_owned(),
             |value| value.device_name().to_owned(),
@@ -299,7 +299,6 @@ mod windows_app {
             .and_then(|value| value.router_url().host_str())
             .unwrap_or("latch-router.vercel.app")
             .to_owned();
-
         DesktopStatus {
             version: file.as_ref().map_or_else(
                 || env!("CARGO_PKG_VERSION").to_owned(),
@@ -331,6 +330,9 @@ mod windows_app {
         Ok(DesktopLocalState {
             config: store.load().map_err(|error| error.to_string())?,
             activity: store.activity().map_err(|error| error.to_string())?,
+            approvals: store
+                .pending_approvals()
+                .map_err(|error| error.to_string())?,
         })
     }
 
@@ -350,12 +352,10 @@ mod windows_app {
         if code.len() < 8 || code.len() > 512 {
             return Err("Enter the complete pairing code from Latch.".to_owned());
         }
-
         let config = LinkConfig::from_env().map_err(|error| error.to_string())?;
         LinkClient::pair(&config, code)
             .await
             .map_err(|error| error.to_string())?;
-
         let _ = run_cli(&["worker-stop"]);
         run_cli(&["worker-start"])?;
         tokio::time::sleep(Duration::from_millis(900)).await;
@@ -395,20 +395,50 @@ mod windows_app {
     }
 
     #[tauri::command]
-    fn set_permission(permission: String, enabled: bool) -> Result<DesktopLocalState, String> {
-        let store = local_store()?;
-        let mut config = store.load().map_err(|error| error.to_string())?;
-        match permission.as_str() {
-            "files" => config.permissions.files = enabled,
-            "commands" => config.permissions.commands = enabled,
-            "screen" => config.permissions.screen = enabled,
-            "computer_control" => config.permissions.computer_control = enabled,
-            "mcp_discovery" => config.permissions.mcp_discovery = enabled,
-            "mcp_execution" => config.permissions.mcp_execution = enabled,
-            _ => return Err("Unknown local permission.".to_owned()),
-        }
-        store
-            .set_permissions(config.permissions)
+    fn set_capability_permission(
+        capability: String,
+        mode: String,
+    ) -> Result<DesktopLocalState, String> {
+        local_store()?
+            .set_permission_mode(
+                parse_capability(&capability)?,
+                parse_permission_mode(&mode)?,
+            )
+            .map_err(|error| error.to_string())?;
+        local_snapshot()
+    }
+
+    #[tauri::command]
+    fn set_permission_preset(preset: String) -> Result<DesktopLocalState, String> {
+        let preset = match preset.as_str() {
+            "observe" => PermissionPreset::Observe,
+            "work" => PermissionPreset::Work,
+            "developer" => PermissionPreset::Developer,
+            "full_control" => PermissionPreset::FullControl,
+            _ => return Err("Unknown permission preset.".to_owned()),
+        };
+        local_store()?
+            .set_permission_preset(preset)
+            .map_err(|error| error.to_string())?;
+        local_snapshot()
+    }
+
+    #[tauri::command]
+    fn resolve_approval(
+        approval_id: String,
+        decision: String,
+    ) -> Result<DesktopLocalState, String> {
+        let approval_id = approval_id
+            .parse::<ApprovalId>()
+            .map_err(|_| "Invalid approval ID.".to_owned())?;
+        let decision = match decision.as_str() {
+            "deny" => ApprovalDecision::Deny,
+            "allow_once" => ApprovalDecision::AllowOnce,
+            "allow_session" => ApprovalDecision::AllowSession,
+            _ => return Err("Unknown approval decision.".to_owned()),
+        };
+        local_store()?
+            .resolve_approval(approval_id, decision)
             .map_err(|error| error.to_string())?;
         local_snapshot()
     }
@@ -495,9 +525,10 @@ mod windows_app {
         let doctor = String::from_utf8_lossy(&output.stdout).trim().to_owned();
         let local = local_snapshot()?;
         Ok(format!(
-            "{doctor}\nApproved folders          {}\nLocal MCP integrations    {}\nRemote access             {}",
+            "{doctor}\nApproved folders          {}\nLocal MCP integrations    {}\nPending approvals         {}\nRemote access             {}",
             local.config.roots.len(),
             local.config.mcp_servers.len(),
+            local.approvals.len(),
             if local.config.paused { "PAUSED" } else { "enabled" }
         ))
     }
@@ -515,7 +546,6 @@ mod windows_app {
     #[tauri::command]
     fn open_logs() -> Result<(), String> {
         use std::os::windows::process::CommandExt;
-
         let logs = local_app_dir().join("logs");
         fs::create_dir_all(&logs).map_err(|error| error.to_string())?;
         Command::new("explorer.exe")
@@ -541,9 +571,39 @@ mod windows_app {
         app.exit(0);
     }
 
+    fn parse_capability(value: &str) -> Result<Capability, String> {
+        match value {
+            "files_read" => Ok(Capability::FilesRead),
+            "files_write" => Ok(Capability::FilesWrite),
+            "exec" => Ok(Capability::Exec),
+            "terminal" => Ok(Capability::Terminal),
+            "application_control" => Ok(Capability::ApplicationControl),
+            "ui_inspection" => Ok(Capability::UiInspection),
+            "ui_control" => Ok(Capability::UiControl),
+            "screen_capture" => Ok(Capability::ScreenCapture),
+            "raw_input" => Ok(Capability::RawInput),
+            "browser_isolated" => Ok(Capability::BrowserIsolated),
+            "browser_authenticated" => Ok(Capability::BrowserAuthenticated),
+            "clipboard_read" => Ok(Capability::ClipboardRead),
+            "clipboard_write" => Ok(Capability::ClipboardWrite),
+            "mcp_discovery" => Ok(Capability::McpDiscovery),
+            "mcp_execution" => Ok(Capability::McpExecution),
+            "native_system_control" => Ok(Capability::NativeSystemControl),
+            _ => Err("Unknown capability.".to_owned()),
+        }
+    }
+
+    fn parse_permission_mode(value: &str) -> Result<PermissionMode, String> {
+        match value {
+            "deny" => Ok(PermissionMode::Deny),
+            "ask" => Ok(PermissionMode::Ask),
+            "allow" => Ok(PermissionMode::Allow),
+            _ => Err("Permission mode must be deny, ask, or allow.".to_owned()),
+        }
+    }
+
     fn open_url(url: &str) -> Result<(), String> {
         use std::os::windows::process::CommandExt;
-
         Command::new("explorer.exe")
             .arg(url)
             .creation_flags(CREATE_NO_WINDOW)

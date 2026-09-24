@@ -9,6 +9,8 @@ pub enum ExecError {
     CommandNotFound { program: String },
     #[error("process was not found: {process_id}")]
     ProcessNotFound { process_id: ProcessId },
+    #[error("command execution is not permitted: {message}")]
+    PermissionDenied { message: String },
     #[error("failed to start or control process: {message}")]
     ProcessFailed {
         message: String,
@@ -28,6 +30,10 @@ impl ExecError {
         if source.kind() == io::ErrorKind::NotFound {
             Self::CommandNotFound {
                 program: program.to_owned(),
+            }
+        } else if source.kind() == io::ErrorKind::PermissionDenied {
+            Self::PermissionDenied {
+                message: format!("could not start {program}"),
             }
         } else {
             Self::Io {

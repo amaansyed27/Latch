@@ -6,6 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+latch-browser = { path = "../latch-browser" }
 latch-computer = { path = "../latch-computer" }
 latch-core = { path = "../latch-core" }
 latch-exec = { path = "../latch-exec" }
@@ -13,6 +14,9 @@ latch-fs = { path = "../latch-fs" }
 latch-local = { path = "../latch-local" }
 latch-mcp-client = { path = "../latch-mcp-client" }
 latch-protocol = { path = "../latch-protocol" }
+latch-terminal = { path = "../latch-terminal" }
+latch-windows = { path = "../latch-windows" }
+serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
 

@@ -78,15 +78,15 @@ void test('OAuth-authenticated MCP filters devices and scopes by user', async ()
     await client.connect(transport);
     const tools = await client.listTools();
     assert.deepEqual(tools.tools[0]?._meta?.securitySchemes, [{ type: 'oauth2', scopes: ['latch:devices:read'] }]);
-    const listed = await client.callTool({ name: 'latch_devices_list', arguments: {} });
+    const listed = await client.callTool({ name: 'latch_devices', arguments: {} });
     assert.deepEqual((listed.structuredContent as { devices: { device_id: string }[] }).devices.map((device) => device.device_id), [DEVICE_A]);
-    const denied = await client.callTool({ name: 'latch_workspace_open', arguments: { device_id: DEVICE_B, root_id: DEVICE_A } });
+    const denied = await client.callTool({ name: 'latch_files', arguments: { device_id: DEVICE_B, request: { op: 'open_workspace', root_id: DEVICE_A } } });
     assert.equal(toolError(denied).code, 'device_offline');
-    const underScoped = await client.callTool({ name: 'latch_file_read', arguments: { device_id: DEVICE_A, workspace_id: DEVICE_B, relative_path: 'README.md' } });
+    const underScoped = await client.callTool({ name: 'latch_files', arguments: { device_id: DEVICE_A, request: { op: 'read', workspace_id: DEVICE_B, path: 'README.md' } } });
     assert.equal(toolError(underScoped).code, 'insufficient_scope');
     assert(await store.revokeDevice(userA, DEVICE_A));
     await coordinator.revokeDevice(DEVICE_A);
-    const afterRevoke = await client.callTool({ name: 'latch_exec_run', arguments: { device_id: DEVICE_A, workspace_id: DEVICE_B, program: 'node', args: [] } });
+    const afterRevoke = await client.callTool({ name: 'latch_exec', arguments: { device_id: DEVICE_A, request: { op: 'run', session_id: DEVICE_A, workspace_id: DEVICE_B, program: 'node', args: [] } } });
     assert.equal(toolError(afterRevoke).code, 'device_offline');
   } finally { await transport.close(); await runtime.close(); }
 });

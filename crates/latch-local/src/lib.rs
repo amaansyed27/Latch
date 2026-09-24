@@ -1,3 +1,6 @@
+mod approvals;
+mod policy;
+
 use std::{
     collections::BTreeMap,
     env, fs, io,
@@ -10,10 +13,14 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use url::Url;
 
+pub use approvals::{ApprovalDecision, ApprovalRequest};
+pub use policy::{Capability, PermissionMode, PermissionPolicy, PermissionPreset};
+
 const CONFIG_FILE: &str = "local-config.json";
 const ACTIVITY_FILE: &str = "activity.json";
 const MAX_ACTIVITY_ENTRIES: usize = 200;
 const MAX_ACTIVITY_DETAIL: usize = 512;
+const CURRENT_POLICY_VERSION: u8 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ApprovedRoot {
@@ -70,7 +77,7 @@ pub struct McpServerConfig {
     pub allow_remote: bool,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct LocalConfig {
     #[serde(default)]
     pub paused: bool,
@@ -79,9 +86,28 @@ pub struct LocalConfig {
     #[serde(default)]
     pub permissions: Permissions,
     #[serde(default)]
+    pub capability_policy: PermissionPolicy,
+    #[serde(default)]
+    pub permission_policy_version: u8,
+    #[serde(default)]
     pub roots: Vec<ApprovedRoot>,
     #[serde(default)]
     pub mcp_servers: Vec<McpServerConfig>,
+}
+
+impl Default for LocalConfig {
+    fn default() -> Self {
+        let permissions = Permissions::default();
+        Self {
+            paused: false,
+            legacy_absolute_workspaces: false,
+            capability_policy: PermissionPolicy::from_legacy(&permissions),
+            permissions,
+            permission_policy_version: CURRENT_POLICY_VERSION,
+            roots: Vec::new(),
+            mcp_servers: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -120,8 +146,15 @@ impl LocalStore {
     pub fn load(&self) -> Result<LocalConfig, LocalError> {
         let path = self.directory.join(CONFIG_FILE);
         match fs::read(&path) {
-            Ok(bytes) => serde_json::from_slice(&bytes)
-                .map_err(|source| LocalError::InvalidConfig { path, source }),
+            Ok(bytes) => {
+                let mut config: LocalConfig = serde_json::from_slice(&bytes)
+                    .map_err(|source| LocalError::InvalidConfig { path, source })?;
+                if config.permission_policy_version < CURRENT_POLICY_VERSION {
+                    config.capability_policy = PermissionPolicy::from_legacy(&config.permissions);
+                    config.permission_policy_version = CURRENT_POLICY_VERSION;
+                }
+                Ok(config)
+            }
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(LocalConfig::default()),
             Err(source) => Err(LocalError::Io { path, source }),
         }
@@ -190,8 +223,32 @@ impl LocalStore {
 
     pub fn set_permissions(&self, permissions: Permissions) -> Result<(), LocalError> {
         let mut config = self.load()?;
+        config.capability_policy = PermissionPolicy::from_legacy(&permissions);
+        config.permission_policy_version = CURRENT_POLICY_VERSION;
         config.permissions = permissions;
         self.save(&config)
+    }
+
+    pub fn set_capability_policy(&self, policy: PermissionPolicy) -> Result<(), LocalError> {
+        let mut config = self.load()?;
+        config.capability_policy = policy;
+        config.permission_policy_version = CURRENT_POLICY_VERSION;
+        self.save(&config)
+    }
+
+    pub fn set_permission_mode(
+        &self,
+        capability: Capability,
+        mode: PermissionMode,
+    ) -> Result<(), LocalError> {
+        let mut config = self.load()?;
+        config.capability_policy.set(capability, mode);
+        config.permission_policy_version = CURRENT_POLICY_VERSION;
+        self.save(&config)
+    }
+
+    pub fn set_permission_preset(&self, preset: PermissionPreset) -> Result<(), LocalError> {
+        self.set_capability_policy(PermissionPolicy::preset(preset))
     }
 
     pub fn upsert_mcp_server(&self, server: McpServerConfig) -> Result<(), LocalError> {
@@ -395,7 +452,7 @@ mod tests {
     }
 
     #[test]
-    fn powerful_permissions_default_off() {
+    fn powerful_legacy_permissions_default_off() {
         let permissions = Permissions::default();
         assert!(permissions.files);
         assert!(permissions.commands);
@@ -403,6 +460,25 @@ mod tests {
         assert!(!permissions.computer_control);
         assert!(!permissions.mcp_discovery);
         assert!(!permissions.mcp_execution);
+    }
+
+    #[test]
+    fn old_config_migrates_to_explicit_policy() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = LocalStore::new(temp.path());
+        fs::write(
+            temp.path().join(CONFIG_FILE),
+            r#"{"permissions":{"files":true,"commands":false,"screen":false,"computer_control":false,"mcp_discovery":true,"mcp_execution":false}}"#,
+        )
+        .unwrap();
+        let config = store.load().unwrap();
+        assert_eq!(config.capability_policy.files_read, PermissionMode::Allow);
+        assert_eq!(config.capability_policy.exec, PermissionMode::Deny);
+        assert_eq!(
+            config.capability_policy.mcp_discovery,
+            PermissionMode::Allow
+        );
+        assert_eq!(config.permission_policy_version, CURRENT_POLICY_VERSION);
     }
 
     #[test]

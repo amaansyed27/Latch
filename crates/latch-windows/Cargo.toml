@@ -1,0 +1,19 @@
+[package]
+name = "latch-windows"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+latch-core = { path = "../latch-core" }
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+cpvc.workspace = true
+uiautomation = { workspace = true, features = ["clipboard", "process"] }
+
+[lints]
+workspace = true

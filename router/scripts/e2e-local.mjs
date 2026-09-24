@@ -9,7 +9,7 @@ import { testConfig } from '../dist/src/config.js';
 import { MemoryCoordinator } from '../dist/src/memory-coordinator.js';
 import { createRouterRuntime } from '../dist/src/runtime.js';
 
-const temp = await mkdtemp(join(tmpdir(), 'latch-v05-e2e-'));
+const temp = await mkdtemp(join(tmpdir(), 'latch-v06-e2e-'));
 const workspace = join(temp, 'workspace');
 const stateDir = join(temp, 'state');
 const identityPath = join(temp, 'device.json');
@@ -73,7 +73,7 @@ try {
 
   const roots = await sendRequest(baseUrl, config.controlToken, device.device_id, {
     id: 'roots-list',
-    version: 2,
+    version: 3,
     method: 'roots.list',
     params: {},
   });
@@ -85,7 +85,7 @@ try {
 
   const opened = await sendRequest(baseUrl, config.controlToken, device.device_id, {
     id: 'workspace-open',
-    version: 2,
+    version: 3,
     method: 'workspace.open',
     params: { root_id: rootId },
   });
@@ -100,12 +100,12 @@ try {
 
   const written = await sendRequest(baseUrl, config.controlToken, device.device_id, {
     id: 'file-write',
-    version: 2,
+    version: 3,
     method: 'fs.write',
     params: {
       workspace_id: workspaceId,
       path: 'proof.txt',
-      contents: 'Latch V0.5 relay proof',
+      contents: 'Latch V0.6 relay proof',
       overwrite: true,
     },
   });
@@ -114,41 +114,41 @@ try {
 
   const read = await sendRequest(baseUrl, config.controlToken, device.device_id, {
     id: 'file-read',
-    version: 2,
+    version: 3,
     method: 'fs.read',
     params: { workspace_id: workspaceId, path: 'proof.txt' },
   });
   assert.equal(read.status, 'ok');
-  assert.equal(read.result?.data?.contents, 'Latch V0.5 relay proof');
+  assert.equal(read.result?.data?.contents, 'Latch V0.6 relay proof');
   assert.equal(read.result?.data?.truncated, false);
 
   const exec = await sendRequest(baseUrl, config.controlToken, device.device_id, {
     id: 'exec-run',
-    version: 2,
+    version: 3,
     method: 'exec.run',
     params: {
       workspace_id: workspaceId,
       program: 'node',
-      args: ['-e', "process.stdout.write('latch-remote-v05')"],
+      args: ['-e', "process.stdout.write('latch-remote-v06')"],
     },
   });
   assert.equal(exec.status, 'ok');
   assert.equal(exec.result?.data?.exit_code, 0);
-  assert.equal(exec.result?.data?.stdout, 'latch-remote-v05');
+  assert.equal(exec.result?.data?.stdout, 'latch-remote-v06');
   assert.equal(exec.result?.data?.timed_out, false);
 
   const computer = await sendRequest(baseUrl, config.controlToken, device.device_id, {
     id: 'computer-displays',
-    version: 2,
+    version: 3,
     method: 'computer.displays',
     params: {},
   });
   assert.equal(computer.status, 'error');
   assert.equal(computer.error?.code, 'computer_unavailable');
 
-  process.stdout.write('Latch V0.5 Router ↔ Link ↔ local engine E2E passed\n');
+  process.stdout.write('Latch V0.6 Router ↔ Link ↔ local engine E2E passed\n');
 } catch (error) {
-  process.stderr.write('Latch V0.5 relay E2E failed\n');
+  process.stderr.write('Latch V0.6 relay E2E failed\n');
   throw error;
 } finally {
   if (link !== null && link.exitCode === null) {

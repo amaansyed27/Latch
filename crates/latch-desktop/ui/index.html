@@ -13,21 +13,18 @@
       <aside class="sidebar">
         <div class="brand-row">
           <img src="logo.svg" alt="" />
-          <div>
-            <strong>Latch</strong>
-            <small id="version">Private beta</small>
-          </div>
+          <div><strong>Latch</strong><small id="version">Private beta</small></div>
         </div>
-
         <nav class="side-nav" id="side-nav" aria-label="Latch sections">
           <button class="active" data-tab="status">Overview</button>
+          <button data-tab="sessions">Sessions</button>
+          <button data-tab="browser">Browser</button>
           <button data-tab="folders">Folders</button>
           <button data-tab="mcps">Local MCPs</button>
           <button data-tab="permissions">Permissions</button>
           <button data-tab="activity">Activity</button>
           <button data-tab="diagnostics">Diagnostics</button>
         </nav>
-
         <div class="sidebar-bottom">
           <button class="nav-action" id="dashboard">Account &amp; devices</button>
           <button class="nav-action danger" id="quit">Quit Latch</button>
@@ -41,22 +38,15 @@
             <h1>Connect this computer</h1>
             <p>Pair once, then choose exactly what ChatGPT may use on this PC.</p>
           </div>
-
           <div class="setup-grid">
             <section class="plain-section">
               <div class="step-number">1</div>
-              <div>
-                <h2>Get a pairing code</h2>
-                <p>Sign in to Latch, open Devices, and choose Add computer.</p>
-                <button class="button secondary" id="open-devices">Open Latch account</button>
-              </div>
+              <div><h2>Get a pairing code</h2><p>Sign in to Latch, open Devices, and choose Add computer.</p><button class="button secondary" id="open-devices">Open Latch account</button></div>
             </section>
-
             <section class="plain-section">
               <div class="step-number">2</div>
               <div class="pair-form">
-                <h2>Pair this computer</h2>
-                <p>Paste the one-time code shown in your browser.</p>
+                <h2>Pair this computer</h2><p>Paste the one-time code shown in your browser.</p>
                 <label for="pair-code">Pairing code</label>
                 <input id="pair-code" autocomplete="off" spellcheck="false" placeholder="Paste pairing code" />
                 <button class="button primary" id="pair">Pair this computer</button>
@@ -68,68 +58,58 @@
 
         <section id="status-view" hidden>
           <header class="page-header">
-            <div>
-              <span class="eyebrow">This computer</span>
-              <h1 id="device-name">This computer</h1>
-            </div>
-            <div class="header-actions">
-              <span class="status-badge" id="state-pill"><i></i><span id="state-label">Checking…</span></span>
-              <button class="button" id="pause-remote">Pause remote access</button>
-            </div>
+            <div><span class="eyebrow">This computer</span><h1 id="device-name">This computer</h1></div>
+            <div class="header-actions"><span class="status-badge" id="state-pill"><i></i><span id="state-label">Checking…</span></span><button class="button" id="pause-remote">Pause remote access</button></div>
           </header>
 
           <section class="tab-panel active" data-panel="status">
-            <div class="section-title">
-              <h2>Connection</h2>
-              <p id="connection-copy">Checking connection…</p>
-            </div>
-
+            <div class="section-title"><h2>Connection</h2><p id="connection-copy">Checking connection…</p></div>
             <div class="status-table">
               <div><span>Status</span><strong id="detail-status">Checking…</strong></div>
               <div><span>Device ID</span><code id="device-id">—</code></div>
               <div><span>Router</span><code id="router">latch-router.vercel.app</code></div>
               <div><span>Remote access</span><strong id="remote-state">Enabled</strong></div>
             </div>
+            <div class="button-row"><button class="button primary" id="restart">Restart connection</button><button class="button" id="logs">Open logs</button></div>
+            <div class="notice" id="status-notice">Latch stays in the system tray when this window is closed.</div>
+          </section>
 
-            <div class="button-row">
-              <button class="button primary" id="restart">Restart connection</button>
-              <button class="button" id="logs">Open logs</button>
+          <section class="tab-panel" data-panel="sessions">
+            <div class="page-section-header"><div><h2>Sessions</h2><p>Normal ChatGPT conversations use explicit device-local Latch sessions rather than depending on MCP transport lifetime.</p></div></div>
+            <div class="status-table">
+              <div><span>Lifecycle</span><strong>Active · Degraded · Closed</strong></div>
+              <div><span>Owned resources</span><strong>Workspaces · terminals · processes · browser tabs</strong></div>
+              <div><span>Restart behavior</span><strong>Recover metadata, mark volatile state degraded</strong></div>
+              <div><span>Cleanup</span><strong>Session close + 12-hour TTL</strong></div>
             </div>
+            <div class="notice">Session details are intentionally scoped to the ChatGPT task through <code>latch_session</code>. Approval requests below show their session context, and Activity records local metadata without storing terminal, file, browser, or screenshot content.</div>
+          </section>
 
-            <div class="notice" id="status-notice">
-              Latch stays in the system tray when this window is closed.
+          <section class="tab-panel" data-panel="browser">
+            <div class="page-section-header"><div><h2>Browser runtime</h2><p>Latch uses a pinned Playwright provider for semantic DOM/accessibility control, console/network inspection, screenshots, downloads, and persistent tabs.</p></div></div>
+            <div class="status-table">
+              <div><span>Provider</span><strong>Playwright 1.63.0</strong></div>
+              <div><span>Default route</span><strong>Semantic browser state before screenshots</strong></div>
+              <div><span>Profiles</span><strong>Isolated + Latch persistent profile</strong></div>
+              <div><span>Existing signed-in browser</span><strong>Deferred · separate permission</strong></div>
+            </div>
+            <div class="permission-list">
+              <label class="permission-row"><span><strong>Isolated browser</strong><small>Latch-controlled testing and persistent-profile contexts</small></span><select data-capability="browser_isolated"><option value="deny">Deny</option><option value="ask">Ask</option><option value="allow">Allow</option></select></label>
+              <label class="permission-row"><span><strong>Authenticated existing browser</strong><small>Reserved for an explicit supported integration; V0.6 does not attach to or copy the default Chrome profile</small></span><select data-capability="browser_authenticated"><option value="deny">Deny</option><option value="ask">Ask</option><option value="allow">Allow</option></select></label>
             </div>
           </section>
 
           <section class="tab-panel" data-panel="folders">
-            <div class="page-section-header">
-              <div>
-                <h2>Approved folders</h2>
-                <p>Only folders you approve here are available to Latch file tools.</p>
-              </div>
-              <button class="button primary" id="add-folder">Add folder</button>
-            </div>
-            <div class="list" id="roots-list"></div>
-            <p class="empty-state" id="roots-empty">No folders approved yet.</p>
+            <div class="page-section-header"><div><h2>Approved folders</h2><p>Only folders you approve here are available to Latch file tools.</p></div><button class="button primary" id="add-folder">Add folder</button></div>
+            <div class="list" id="roots-list"></div><p class="empty-state" id="roots-empty">No folders approved yet.</p>
           </section>
 
           <section class="tab-panel" data-panel="mcps">
-            <div class="page-section-header">
-              <div>
-                <h2>Local MCPs</h2>
-                <p>Connect local tools such as Blender or Playwright. Configuration remains on this PC.</p>
-              </div>
-              <button class="button primary" id="new-mcp">Add MCP</button>
-            </div>
-            <div class="list" id="mcp-list"></div>
-            <p class="empty-state" id="mcp-empty">No local MCP integrations configured.</p>
-
+            <div class="page-section-header"><div><h2>Local MCPs</h2><p>Connect local tools such as Blender. Commands, endpoints, environment references, and secrets remain on this PC.</p></div><button class="button primary" id="new-mcp">Add MCP</button></div>
+            <div class="list" id="mcp-list"></div><p class="empty-state" id="mcp-empty">No local MCP integrations configured.</p>
             <form class="mcp-form" id="mcp-form" hidden>
               <input type="hidden" id="mcp-id" />
-              <div class="form-head">
-                <h3 id="mcp-form-title">Add MCP</h3>
-                <button type="button" class="text-button" id="cancel-mcp">Cancel</button>
-              </div>
+              <div class="form-head"><h3 id="mcp-form-title">Add MCP</h3><button type="button" class="text-button" id="cancel-mcp">Cancel</button></div>
               <label>Name<input id="mcp-name" maxlength="128" required placeholder="Blender" /></label>
               <label>Transport<select id="mcp-transport"><option value="stdio">Command / stdio</option><option value="http">HTTP</option></select></label>
               <div id="mcp-stdio-fields">
@@ -137,55 +117,54 @@
                 <label>Arguments <small>one per line</small><textarea id="mcp-args" rows="3" placeholder="-y&#10;package-name"></textarea></label>
                 <label>Environment references <small>TARGET=LOCAL_ENV_NAME</small><textarea id="mcp-env" rows="3" placeholder="TOKEN=LOCAL_TOKEN_NAME"></textarea></label>
               </div>
-              <div id="mcp-http-fields" hidden>
-                <label>HTTP URL<input id="mcp-url" maxlength="4096" placeholder="http://127.0.0.1:3000/mcp" /></label>
-              </div>
-              <div class="inline-checks">
-                <label><input type="checkbox" id="mcp-enabled" checked /> Enabled</label>
-                <label><input type="checkbox" id="mcp-remote" /> Allow through ChatGPT</label>
-              </div>
-              <p class="form-message" id="mcp-message" role="status"></p>
-              <button class="button primary" type="submit">Save integration</button>
+              <div id="mcp-http-fields" hidden><label>HTTP URL<input id="mcp-url" maxlength="4096" placeholder="http://127.0.0.1:3000/mcp" /></label></div>
+              <div class="inline-checks"><label><input type="checkbox" id="mcp-enabled" checked /> Enabled</label><label><input type="checkbox" id="mcp-remote" /> Allow through ChatGPT</label></div>
+              <p class="form-message" id="mcp-message" role="status"></p><button class="button primary" type="submit">Save integration</button>
             </form>
           </section>
 
           <section class="tab-panel" data-panel="permissions">
             <div class="page-section-header">
-              <div>
-                <h2>Permissions</h2>
-                <p>Local switches override OAuth. Turn a capability off here to deny it immediately.</p>
-              </div>
+              <div><h2>Permissions</h2><p>Local policy is authoritative. Deny blocks the route; Ask requires approval here; Allow permits the provider.</p></div>
             </div>
+            <div class="button-row permission-presets" aria-label="Permission presets">
+              <button class="button" data-preset="observe">Observe</button>
+              <button class="button" data-preset="work">Work</button>
+              <button class="button" data-preset="developer">Developer</button>
+              <button class="button" data-preset="full_control">Full Control</button>
+            </div>
+            <div class="notice">An allowed interactive terminal runs with your logged-in Windows authority. Capability switches control Latch providers; they do not sandbox arbitrary shell commands.</div>
             <div class="permission-list">
-              <label class="permission-row"><span><strong>Files</strong><small>Use files inside approved folders</small></span><input type="checkbox" data-permission="files" /></label>
-              <label class="permission-row"><span><strong>Commands</strong><small>Run and manage local processes</small></span><input type="checkbox" data-permission="commands" /></label>
-              <label class="permission-row"><span><strong>Screen access</strong><small>Capture the screen only on explicit request</small></span><input type="checkbox" data-permission="screen" /></label>
-              <label class="permission-row"><span><strong>Mouse &amp; keyboard</strong><small>Focus windows and send local input</small></span><input type="checkbox" data-permission="computer_control" /></label>
-              <label class="permission-row"><span><strong>MCP discovery</strong><small>List allowed local MCP integrations and tools</small></span><input type="checkbox" data-permission="mcp_discovery" /></label>
-              <label class="permission-row"><span><strong>MCP execution</strong><small>Call tools on allowed local MCP integrations</small></span><input type="checkbox" data-permission="mcp_execution" /></label>
+              <label class="permission-row"><span><strong>Files — read</strong><small>Read inside approved workspaces</small></span><select data-capability="files_read"><option value="deny">Deny</option><option value="ask">Ask</option><option value="allow">Allow</option></select></label>
+              <label class="permission-row"><span><strong>Files — write</strong><small>Write, patch, move, create, delete</small></span><select data-capability="files_write"><option value="deny">Deny</option><option value="ask">Ask</option><option value="allow">Allow</option></select></label>
+              <label class="permission-row"><span><strong>One-shot execution</strong><small>Run managed commands and processes</small></span><select data-capability="exec"><option value="deny">Deny</option><option value="ask">Ask</option><option value="allow">Allow</option></select></label>
+              <label class="permission-row"><span><strong>Interactive terminals</strong><small>Persistent ConPTY shells</small></span><select data-capability="terminal"><option value="deny">Deny</option><option value="ask">Ask</option><option value="allow">Allow</option></select></label>
+              <label class="permission-row"><span><strong>Application control</strong><small>Launch, activate, close, open targets</small></span><select data-capability="application_control"><option value="deny">Deny</option><option value="ask">Ask</option><option value="allow">Allow</option></select></label>
+              <label class="permission-row"><span><strong>UI inspection</strong><small>Read bounded Windows UI Automation state</small></span><select data-capability="ui_inspection"><option value="deny">Deny</option><option value="ask">Ask</option><option value="allow">Allow</option></select></label>
+              <label class="permission-row"><span><strong>UI control</strong><small>Invoke and edit semantic Windows controls</small></span><select data-capability="ui_control"><option value="deny">Deny</option><option value="ask">Ask</option><option value="allow">Allow</option></select></label>
+              <label class="permission-row"><span><strong>Screen capture</strong><small>Capture bounded screenshots</small></span><select data-capability="screen_capture"><option value="deny">Deny</option><option value="ask">Ask</option><option value="allow">Allow</option></select></label>
+              <label class="permission-row"><span><strong>Raw input</strong><small>Mouse and keyboard fallback</small></span><select data-capability="raw_input"><option value="deny">Deny</option><option value="ask">Ask</option><option value="allow">Allow</option></select></label>
+              <label class="permission-row"><span><strong>Browser — isolated</strong><small>Latch-controlled testing profile</small></span><select data-capability="browser_isolated"><option value="deny">Deny</option><option value="ask">Ask</option><option value="allow">Allow</option></select></label>
+              <label class="permission-row"><span><strong>Browser — authenticated</strong><small>Separate high-sensitivity browser capability</small></span><select data-capability="browser_authenticated"><option value="deny">Deny</option><option value="ask">Ask</option><option value="allow">Allow</option></select></label>
+              <label class="permission-row"><span><strong>Clipboard — read</strong><small>Read current clipboard text</small></span><select data-capability="clipboard_read"><option value="deny">Deny</option><option value="ask">Ask</option><option value="allow">Allow</option></select></label>
+              <label class="permission-row"><span><strong>Clipboard — write</strong><small>Replace clipboard text</small></span><select data-capability="clipboard_write"><option value="deny">Deny</option><option value="ask">Ask</option><option value="allow">Allow</option></select></label>
+              <label class="permission-row"><span><strong>MCP discovery</strong><small>Search local provider catalogues lazily</small></span><select data-capability="mcp_discovery"><option value="deny">Deny</option><option value="ask">Ask</option><option value="allow">Allow</option></select></label>
+              <label class="permission-row"><span><strong>MCP execution</strong><small>Invoke an explicitly selected local MCP tool</small></span><select data-capability="mcp_execution"><option value="deny">Deny</option><option value="ask">Ask</option><option value="allow">Allow</option></select></label>
+              <label class="permission-row"><span><strong>Native system control</strong><small>Volume and other explicit Windows providers</small></span><select data-capability="native_system_control"><option value="deny">Deny</option><option value="ask">Ask</option><option value="allow">Allow</option></select></label>
             </div>
+
+            <div class="page-section-header approvals-header"><div><h2>Approval requests</h2><p>Ask-mode requests are queued here. Session grants expire and are cleared when the session closes.</p></div></div>
+            <div class="list" id="approvals-list"></div>
+            <p class="empty-state" id="approvals-empty">No pending approvals.</p>
           </section>
 
           <section class="tab-panel" data-panel="activity">
-            <div class="page-section-header">
-              <div>
-                <h2>Recent activity</h2>
-                <p>Local metadata only. File contents, screenshots, command output, and secrets are not stored here.</p>
-              </div>
-              <button class="button" id="clear-activity">Clear history</button>
-            </div>
-            <div class="activity-list" id="activity-list"></div>
-            <p class="empty-state" id="activity-empty">No remote activity recorded yet.</p>
+            <div class="page-section-header"><div><h2>Recent activity</h2><p>Local metadata only. File contents, screenshots, command output, browser state, and secrets are not stored here.</p></div><button class="button" id="clear-activity">Clear history</button></div>
+            <div class="activity-list" id="activity-list"></div><p class="empty-state" id="activity-empty">No remote activity recorded yet.</p>
           </section>
 
           <section class="tab-panel" data-panel="diagnostics">
-            <div class="page-section-header">
-              <div>
-                <h2>Diagnostics</h2>
-                <p>Check pairing, credentials, Router health, folders, integrations, and pause state.</p>
-              </div>
-              <button class="button primary" id="run-diagnostics">Run diagnostics</button>
-            </div>
+            <div class="page-section-header"><div><h2>Diagnostics</h2><p>Check pairing, credentials, Router health, folders, integrations, approvals, and pause state.</p></div><button class="button primary" id="run-diagnostics">Run diagnostics</button></div>
             <pre class="diagnostics-output" id="diagnostics-output">Run diagnostics when something does not look right.</pre>
           </section>
         </section>

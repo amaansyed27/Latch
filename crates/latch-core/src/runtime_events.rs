@@ -223,18 +223,17 @@ fn push_event(
         summary,
         payload_json,
     };
-    if let Some(last) = state.events.back_mut() {
-        if last.session_id == event.session_id
-            && last.source == event.source
-            && last.event_type == event.event_type
-            && last.summary == event.summary
-            && event.timestamp_ms.saturating_sub(last.timestamp_ms) < 200
-        {
-            last.sequence = event.sequence;
-            last.timestamp_ms = event.timestamp_ms;
-            last.payload_json.clone_from(&event.payload_json);
-            return last.clone();
-        }
+    if let Some(existing) = state.events.iter_mut().rev().find(|candidate| {
+        candidate.session_id == event.session_id
+            && candidate.source == event.source
+            && candidate.event_type == event.event_type
+            && candidate.summary == event.summary
+            && event.timestamp_ms.saturating_sub(candidate.timestamp_ms) < 200
+    }) {
+        existing.sequence = event.sequence;
+        existing.timestamp_ms = event.timestamp_ms;
+        existing.payload_json.clone_from(&event.payload_json);
+        return existing.clone();
     }
     state.events.push_back(event.clone());
     while state.events.len() > MAX_EVENTS {
@@ -315,6 +314,19 @@ mod tests {
             .iter()
             .any(|event| event.event_type == "terminal.output"));
         clear_session(session);
+    }
+
+    #[test]
+    fn coalescing_survives_interleaved_other_session_events() {
+        let one = SessionId::new();
+        let two = SessionId::new();
+        publish_session(one, "terminal", "terminal.output", "data", None);
+        publish_session(two, "browser", "browser.navigation", "loaded", None);
+        publish_session(one, "terminal", "terminal.output", "data", None);
+        let events = read(one, 0, &[], 0, 100);
+        assert_eq!(events.len(), 1);
+        clear_session(one);
+        clear_session(two);
     }
 
     #[test]

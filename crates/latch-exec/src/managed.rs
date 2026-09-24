@@ -8,7 +8,10 @@ use std::{
 };
 
 use command_group::GroupChild;
-use latch_core::{ProcessId, Workspace};
+use latch_core::{
+    runtime_events::{self, ResourceKey},
+    ProcessId, Workspace,
+};
 use tracing::{info, instrument, warn};
 
 use crate::{
@@ -46,11 +49,21 @@ impl ProcessManager {
     ) -> Result<ProcessStart, ExecError> {
         let spawned = spawn_grouped(workspace, spec)?;
         let child = spawned.child;
+        let process_id = ProcessId::new();
         let stdout_buffer = Arc::new(Mutex::new(OutputBuffer::default()));
         let stderr_buffer = Arc::new(Mutex::new(OutputBuffer::default()));
-        let stdout_reader = spawn_reader("stdout", spawned.stdout, Arc::clone(&stdout_buffer));
-        let stderr_reader = spawn_reader("stderr", spawned.stderr, Arc::clone(&stderr_buffer));
-        let process_id = ProcessId::new();
+        let stdout_reader = spawn_reader(
+            "stdout",
+            spawned.stdout,
+            Arc::clone(&stdout_buffer),
+            process_id,
+        );
+        let stderr_reader = spawn_reader(
+            "stderr",
+            spawned.stderr,
+            Arc::clone(&stderr_buffer),
+            process_id,
+        );
         let os_pid = child.id();
         let process = ManagedProcess {
             child,
@@ -179,6 +192,7 @@ impl ProcessManager {
                     warn!(%process_id, error = %error, "managed process shutdown failed");
                 }
             }
+            runtime_events::unbind_resource(ResourceKey::Process(process_id));
         }
         report
     }
@@ -230,6 +244,13 @@ impl ManagedProcess {
                 status,
                 elapsed: self.started.elapsed(),
             });
+            runtime_events::publish_resource(
+                ResourceKey::Process(process_id),
+                "process",
+                "process.exited",
+                "Process exited",
+                None,
+            );
         }
         Ok(())
     }
@@ -246,6 +267,13 @@ impl ManagedProcess {
                 status,
                 elapsed: self.started.elapsed(),
             });
+            runtime_events::publish_resource(
+                ResourceKey::Process(process_id),
+                "process",
+                "process.exited",
+                "Process stopped",
+                None,
+            );
         }
         self.join_readers(process_id)?;
         Ok(was_running)
@@ -354,19 +382,41 @@ fn spawn_reader(
     stream_name: &'static str,
     stream: impl Read + Send + 'static,
     buffer: Arc<Mutex<OutputBuffer>>,
+    process_id: ProcessId,
 ) -> JoinHandle<()> {
-    thread::spawn(move || read_stream(stream_name, stream, &buffer))
+    thread::spawn(move || read_stream(stream_name, stream, &buffer, process_id))
 }
 
-fn read_stream(stream_name: &'static str, mut stream: impl Read, buffer: &Mutex<OutputBuffer>) {
+fn read_stream(
+    stream_name: &'static str,
+    mut stream: impl Read,
+    buffer: &Mutex<OutputBuffer>,
+    process_id: ProcessId,
+) {
     let mut chunk = [0_u8; 8192];
     loop {
         match stream.read(&mut chunk) {
             Ok(0) => {
                 lock(buffer).complete = true;
+                runtime_events::publish_resource(
+                    ResourceKey::Process(process_id),
+                    "process",
+                    "process.stream_closed",
+                    &format!("Process {stream_name} closed"),
+                    None,
+                );
                 return;
             }
-            Ok(count) => lock(buffer).append(&chunk[..count]),
+            Ok(count) => {
+                lock(buffer).append(&chunk[..count]);
+                runtime_events::publish_resource(
+                    ResourceKey::Process(process_id),
+                    "process",
+                    "process.output",
+                    &format!("Process produced {stream_name} output"),
+                    None,
+                );
+            }
             Err(error) => {
                 warn!(stream = stream_name, error = %error, "managed process output read failed");
                 return;

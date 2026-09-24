@@ -10,7 +10,11 @@ use std::{
 #[cfg(windows)]
 use std::{path::PathBuf, process::Command};
 
-use latch_core::TerminalId;
+use latch_core::{
+    resolver::{resolve_route, ProviderRoute, RouteCandidate, RouteIntent},
+    runtime_events::{self, ResourceKey},
+    TerminalId,
+};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -115,6 +119,19 @@ impl TerminalManager {
         rows: u16,
         cols: u16,
     ) -> Result<TerminalCreated, TerminalError> {
+        let resolution = resolve_route(
+            RouteIntent::InteractiveTerminal,
+            &[RouteCandidate::new(
+                ProviderRoute::ConPty,
+                true,
+                true,
+                100,
+                true,
+            )],
+        )
+        .map_err(|error| TerminalError::Create(format!("terminal route unavailable: {error:?}")))?;
+        debug_assert_eq!(resolution.route, ProviderRoute::ConPty);
+
         let profiles = discover_shell_profiles();
         let profile = match profile_id {
             Some(id) => profiles
@@ -160,9 +177,14 @@ impl TerminalManager {
         #[cfg(windows)]
         let job = attach_windows_job(child.as_ref())?;
 
-        let output = Arc::new(Mutex::new(OutputRing::default()));
-        let reader_task = spawn_reader(reader, Arc::clone(&output), Arc::downgrade(&writer));
         let terminal_id = TerminalId::new();
+        let output = Arc::new(Mutex::new(OutputRing::default()));
+        let reader_task = spawn_reader(
+            reader,
+            Arc::clone(&output),
+            Arc::downgrade(&writer),
+            terminal_id,
+        );
         let pid = child.process_id();
         let terminal = ManagedTerminal {
             profile: profile.clone(),
@@ -284,7 +306,7 @@ impl TerminalManager {
     pub fn kill(&self, terminal_id: TerminalId) -> Result<TerminalState, TerminalError> {
         let handle = self.terminal(terminal_id)?;
         let mut terminal = lock(&handle);
-        terminal.kill()?;
+        terminal.kill(terminal_id)?;
         Ok(TerminalState::Killed)
     }
 
@@ -292,19 +314,20 @@ impl TerminalManager {
         let handle = lock(&self.terminals)
             .remove(&terminal_id)
             .ok_or(TerminalError::NotFound(terminal_id))?;
-        let _ = lock(&handle).kill();
+        let _ = lock(&handle).kill(terminal_id);
+        runtime_events::unbind_resource(ResourceKey::Terminal(terminal_id));
         Ok(())
     }
 
     pub fn shutdown_all(&self) {
         let handles = lock(&self.terminals)
             .drain()
-            .map(|(_, handle)| handle)
             .collect::<Vec<_>>();
-        for handle in handles {
-            if let Err(error) = lock(&handle).kill() {
+        for (terminal_id, handle) in handles {
+            if let Err(error) = lock(&handle).kill(terminal_id) {
                 warn!(%error, "terminal shutdown failed");
             }
+            runtime_events::unbind_resource(ResourceKey::Terminal(terminal_id));
         }
     }
 
@@ -357,12 +380,19 @@ impl ManagedTerminal {
         }
     }
 
-    fn kill(&mut self) -> Result<(), TerminalError> {
+    fn kill(&mut self, terminal_id: TerminalId) -> Result<(), TerminalError> {
         if matches!(self.state()?, TerminalState::Running) {
             self.child.kill()?;
             #[cfg(windows)]
             self.job.take();
             let _ = self.child.wait()?;
+            runtime_events::publish_resource(
+                ResourceKey::Terminal(terminal_id),
+                "terminal",
+                "process.exited",
+                "Terminal process exited",
+                None,
+            );
         }
         self.killed = true;
         self.writer.take();
@@ -437,6 +467,7 @@ fn spawn_reader(
     mut reader: Box<dyn Read + Send>,
     output: Arc<Mutex<OutputRing>>,
     writer: Weak<Mutex<Box<dyn Write + Send>>>,
+    terminal_id: TerminalId,
 ) -> JoinHandle<()> {
     thread::spawn(move || {
         let mut chunk = [0_u8; 8192];
@@ -445,6 +476,13 @@ fn spawn_reader(
             match reader.read(&mut chunk) {
                 Ok(0) => {
                     lock(&output).complete = true;
+                    runtime_events::publish_resource(
+                        ResourceKey::Terminal(terminal_id),
+                        "terminal",
+                        "process.exited",
+                        "Terminal process exited",
+                        None,
+                    );
                     return;
                 }
                 Ok(count) => {
@@ -466,6 +504,13 @@ fn spawn_reader(
                     let keep = query_scan.len().min(3);
                     query_tail.extend_from_slice(&query_scan[query_scan.len() - keep..]);
                     lock(&output).append(bytes);
+                    runtime_events::publish_resource(
+                        ResourceKey::Terminal(terminal_id),
+                        "terminal",
+                        "terminal.output",
+                        "Terminal produced output",
+                        None,
+                    );
                 }
                 Err(error) => {
                     warn!(%error, "terminal output reader failed");
@@ -644,6 +689,8 @@ mod tests {
         time::{Duration, Instant},
     };
 
+    use latch_core::{runtime_events, SessionId};
+
     use super::*;
 
     #[test]
@@ -692,6 +739,29 @@ mod tests {
         };
         assert!(second.output.contains("SECOND"));
         manager.kill(created.terminal_id).unwrap();
+    }
+
+    #[test]
+    fn terminal_output_wakes_event_wait_without_terminal_read() {
+        let manager = TerminalManager::new();
+        let cwd = std::env::current_dir().unwrap();
+        let created = manager.create(None, &cwd, 24, 100).unwrap();
+        let session = SessionId::new();
+        runtime_events::bind_resource(ResourceKey::Terminal(created.terminal_id), session);
+        let cursor = runtime_events::latest_sequence();
+        manager
+            .write(created.terminal_id, "echo LATCH_ASYNC_EVENT\r\n")
+            .unwrap();
+        let events = runtime_events::read(
+            session,
+            cursor,
+            &["terminal.output".to_owned()],
+            5_000,
+            10,
+        );
+        assert!(!events.is_empty());
+        manager.remove(created.terminal_id).unwrap();
+        runtime_events::clear_session(session);
     }
 
     #[test]
